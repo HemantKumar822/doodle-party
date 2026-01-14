@@ -25,6 +25,10 @@ function getRandomWords(arr: string[], n: number): string[] {
     return shuffled.slice(0, n);
 }
 
+import GameHeader from '@/app/components/game/GameHeader';
+import PlayerList from '@/app/components/game/PlayerList';
+import ChatBox from '@/app/components/game/ChatBox';
+
 export default function GameView({ room, players, currentPlayerId }: GameViewProps) {
     const [timeLeft, setTimeLeft] = useState(0);
     const [messages, setMessages] = useState<any[]>([]);
@@ -408,82 +412,33 @@ export default function GameView({ room, players, currentPlayerId }: GameViewPro
     // Next up calculator
     const nextDrawer = players.find(p => p.turn_order === (room.current_drawer_index + 1) % players.length);
 
+    // Mobile Tab State
+    const [activeTab, setActiveTab] = useState<'canvas' | 'chat' | 'players'>('canvas');
+
     return (
-        <div className="flex flex-col h-screen max-w-[1400px] mx-auto p-2 md:p-4">
-            {/* Top Bar */}
-            <div className="flex justify-between items-center mb-4 sketchy-border bg-white p-3 shadow-md">
-                <div className="text-xl font-bold">Round {room.current_round} / {room.max_rounds}</div>
-                <div className="text-3xl font-bold font-mono tracking-widest">
-                    {room.current_word && !isDrawer && !hasGuessedCorrectly && !showScoreboard
-                        ? room.current_word.split('').map((c, i) => {
-                            if (c === ' ') return '  ';
-                            if (revealedLetters.has(i)) return c + ' ';
-                            return '_ ';
-                        }).join('')
-                        : (room.current_word || 'CHOOSING...')}
-                </div>
-                <div className="flex items-center gap-3">
-                    <button
-                        onClick={() => {
-                            toggleMute();
-                            playSound('click');
-                        }}
-                        className="text-2xl hover:scale-110 transition-transform"
-                        title={isMuted ? 'Unmute' : 'Mute'}
-                    >
-                        {isMuted ? '🔇' : '🔊'}
-                    </button>
-                    <div className={`text-2xl font-bold ${timeLeft < 10 ? 'text-red-500 animate-pulse' : 'text-black'}`}>
-                        ⏰ {timeLeft}s
-                    </div>
-                </div>
-            </div>
+        <div className="flex flex-col h-[100dvh] max-w-[1400px] mx-auto p-0 md:p-4 overflow-hidden">
+            {/* Header */}
+            <GameHeader
+                room={room}
+                isDrawer={isDrawer}
+                hasGuessedCorrectly={hasGuessedCorrectly}
+                showScoreboard={showScoreboard}
+                revealedLetters={revealedLetters}
+                timeLeft={timeLeft}
+                isMuted={isMuted}
+                toggleMute={toggleMute}
+                playSound={playSound}
+            />
 
-            <div className="flex flex-col md:flex-row gap-4 flex-1 min-h-0">
-                {/* Sidebar: Players */}
-                <div className="w-full md:w-52 flex-shrink-0 flex flex-row md:flex-col gap-2 overflow-x-auto md:overflow-y-auto pr-2">
-                    {players.map(p => {
-                        const avatarConfig = (p.avatar?.style && p.avatar?.seed)
-                            ? { style: p.avatar.style, seed: p.avatar.seed }
-                            : defaultAvatarConfig();
+            <div className="flex flex-col md:flex-row gap-4 flex-1 min-h-0 relative">
 
-                        const maxScore = Math.max(...players.map(pl => pl.score));
-                        const isLeader = p.score > 0 && p.score === maxScore;
-
-                        return (
-                            <div key={p.id} className={`sketchy-border p-2 bg-white flex items-center gap-2 transition-all relative ${safestDrawer && p.id === safestDrawer.id ? 'border-blue-500 bg-blue-50 scale-105 shadow-md' : 'shadow-sm'}`}>
-                                <div className="relative w-10 h-10 flex-shrink-0">
-                                    <div className={`w-full h-full rounded-full overflow-hidden border ${isLeader ? 'border-yellow-400 ring-1 ring-yellow-200' : 'border-black'} bg-white`}>
-                                        <img
-                                            src={generateAvatarSvg(avatarConfig, 48)}
-                                            alt={p.display_name}
-                                            className="w-full h-full"
-                                        />
-                                    </div>
-                                    {isLeader && (
-                                        <div className="absolute -top-2 -right-1 text-sm filter drop-shadow-sm animate-bounce-slow" title="Leader">
-                                            👑
-                                        </div>
-                                    )}
-                                    {p.is_host && (
-                                        <div className="absolute -bottom-1 left-1/2 transform -translate-x-1/2 bg-black text-white text-[8px] font-bold px-1.5 py-px rounded-full uppercase tracking-wider">
-                                            HOST
-                                        </div>
-                                    )}
-                                </div>
-                                <div className="flex-1 min-w-0">
-                                    <div className="truncate text-sm font-bold leading-tight">{p.display_name}</div>
-                                    <div className="text-xs text-gray-500 font-bold leading-tight">Score: {p.score}</div>
-                                </div>
-                                {safestDrawer && p.id === safestDrawer.id && <span className="text-xl">✏️</span>}
-                                {correctGuessers.has(p.id) && <span className="text-green-500 font-bold text-xl">✓</span>}
-                            </div>
-                        );
-                    })}
+                {/* Desktop: Sidebar Players */}
+                <div className="hidden md:flex flex-col w-52 flex-shrink-0 gap-2 overflow-y-auto">
+                    <PlayerList players={players} safestDrawer={safestDrawer} correctGuessers={correctGuessers} />
                 </div>
 
-                {/* Main: Canvas */}
-                <div className="flex-1 relative min-h-[400px] sketchy-border bg-gray-100 overflow-hidden flex items-center justify-center">
+                {/* Main Content Area (Canvas is always rendered to keep state) */}
+                <div className={`flex-1 relative sketchy-border bg-gray-100 overflow-hidden flex items-center justify-center ${activeTab !== 'canvas' ? 'hidden md:flex' : 'flex'}`}>
                     <Canvas
                         roomId={room.id}
                         isDrawer={isDrawer}
@@ -495,18 +450,18 @@ export default function GameView({ room, players, currentPlayerId }: GameViewPro
 
                     {/* Word Selection Modal */}
                     {showWordModal && (
-                        <div className="absolute inset-0 bg-black/80 flex items-center justify-center z-10 transition-opacity">
-                            <div className="sketchy-border bg-white p-8 text-center animate-wobble shadow-xl">
-                                <h2 className="text-2xl mb-2 font-bold">It's your turn! Pick a word:</h2>
+                        <div className="absolute inset-0 bg-black/80 flex items-center justify-center z-10 p-4">
+                            <div className="sketchy-border bg-white p-6 md:p-8 text-center animate-wobble shadow-xl max-w-lg w-full">
+                                <h2 className="text-xl md:text-2xl mb-2 font-bold">It's your turn! Pick a word:</h2>
                                 <div className={`text-4xl font-bold mb-4 ${wordSelectionTime <= 3 ? 'text-red-500 animate-pulse' : 'text-gray-600'}`}>
                                     {wordSelectionTime}s
                                 </div>
-                                <div className="flex flex-wrap justify-center gap-4">
+                                <div className="flex flex-wrap justify-center gap-3">
                                     {wordChoices.map(w => (
                                         <button
                                             key={w}
                                             onClick={() => selectWord(w)}
-                                            className="doodle-button text-lg bg-mint hover:bg-green-200 transform hover:scale-110 transition-transform"
+                                            className="doodle-button text-base md:text-lg bg-mint hover:bg-green-200 transform hover:scale-110 transition-transform"
                                         >
                                             {w}
                                         </button>
@@ -534,37 +489,49 @@ export default function GameView({ room, players, currentPlayerId }: GameViewPro
                     )}
                 </div>
 
-                {/* Chat */}
-                <div className="w-full md:w-80 flex-shrink-0 flex flex-col sketchy-border bg-white h-64 md:h-auto shadow-md">
-                    <div className="flex-1 overflow-y-auto p-2 space-y-2 bg-paper" ref={chatRef}>
-                        {messages.map((m, i) => (
-                            <div key={i} className={`text-sm p-1 rounded ${m.is_correct ? 'bg-green-100 text-green-800 border border-green-300' : 'bg-white border border-gray-100'}`}>
-                                <span className="font-bold">{m.name}: </span>
-                                {m.is_correct ? <span>🎉 Guessed correctly!</span> : m.guess_text}
-                            </div>
-                        ))}
-                    </div>
-
-                    {!isDrawer ? (
-                        <form onSubmit={sendGuess} className="p-2 border-t-2 border-gray-200 bg-gray-50 flex gap-2">
-                            <input
-                                className="flex-1 border-2 border-black rounded px-2 py-1 font-inherit focus:ring-2 focus:ring-yellow-300 outline-none"
-                                placeholder="Type your guess here..."
-                                value={guess}
-                                onChange={e => setGuess(e.target.value)}
-                                maxLength={30}
-                                autoFocus
-                            />
-                            <button type="submit" className="doodle-button py-1 px-4 text-sm">
-                                Send
-                            </button>
-                        </form>
-                    ) : (
-                        <div className="p-2 border-t font-bold text-center text-gray-500 bg-gray-100">
-                            Draw the word! NO CHEATING!
-                        </div>
-                    )}
+                {/* Mobile: Players Tab View */}
+                <div className={`flex-1 md:hidden ${activeTab === 'players' ? 'flex' : 'hidden'} overflow-y-auto p-2`}>
+                    <PlayerList players={players} safestDrawer={safestDrawer} correctGuessers={correctGuessers} />
                 </div>
+
+                {/* Desktop: Chat Sidebar / Mobile: Chat Tab View */}
+                <div className={`w-full md:w-80 flex-shrink-0 flex flex-col ${activeTab === 'chat' ? 'flex h-full' : 'hidden md:flex h-full'}`}>
+                    <ChatBox
+                        room={room}
+                        messages={messages}
+                        isDrawer={isDrawer}
+                        hasGuessedCorrectly={hasGuessedCorrectly}
+                        guess={guess}
+                        setGuess={setGuess}
+                        sendGuess={sendGuess}
+                    />
+                </div>
+            </div>
+
+            {/* Mobile Bottom Tab Bar */}
+            <div className="md:hidden flex justify-around items-center bg-white border-t-2 border-black p-2 pb-safe">
+                <button
+                    onClick={() => setActiveTab('players')}
+                    className={`flex flex-col items-center p-2 rounded-lg ${activeTab === 'players' ? 'bg-yellow-100' : ''}`}
+                >
+                    <span className="text-xl">👥</span>
+                    <span className="text-xs font-bold">Players</span>
+                </button>
+                <button
+                    onClick={() => setActiveTab('canvas')}
+                    className={`flex flex-col items-center p-2 rounded-lg ${activeTab === 'canvas' ? 'bg-yellow-100' : ''}`}
+                >
+                    <span className="text-xl">🎨</span>
+                    <span className="text-xs font-bold">Canvas</span>
+                </button>
+                <button
+                    onClick={() => setActiveTab('chat')}
+                    className={`flex flex-col items-center p-2 rounded-lg ${activeTab === 'chat' ? 'bg-yellow-100' : ''}`}
+                >
+                    <span className="text-xl">💬</span>
+                    <span className="text-xs font-bold">Chat</span>
+                    {/* Unread badge logic could go here */}
+                </button>
             </div>
         </div>
     );
