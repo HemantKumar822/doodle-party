@@ -1,0 +1,81 @@
+@import "tailwindcss";
+
+:root {
+  --background: #FFFEF9; /* COLORS.paper */
+  --foreground: #2C2C2C; /* COLORS.sketchDark */
+  --font-permanent-marker: 'Permanent Marker', cursive;
+  
+  /* Color Variables */
+  --pink: #FFE5E5;
+  --peach: #FFF4E5;
+  --blue: #E5F4FF;
+  --mint: #F0FFE5;
+  --sketch-dark: #2C2C2C;
+}
+
+body {
+  background-color: var(--background);
+  color: var(--foreground);
+  font-family: var(--font-permanent-marker), cursive;
+  
+  /* Paper Texture Pattern */
+  background-image: 
+    repeating-linear-gradient(
+      0deg,
+      transparent,
+      transparent 2px,
+      rgba(0,0,0,0.02) 2px,
+      rgba(0,0,0,0.02) 4px
+    );
+}
+
+/* Utilities */
+
+.sketchy-border {
+  border: 3px solid var(--sketch-dark);
+  border-radius: 12px;
+  position: relative;
+  /* Apply the rough paper filter defined in layout.tsx */
+  filter: url(#rough-paper);
+}
+
+.doodle-button {
+  background: var(--peach);
+  border: 3px solid var(--sketch-dark);
+  padding: 12px 24px;
+  cursor: pointer;
+  position: relative;
+  transform: rotate(-1deg);
+  box-shadow: 4px 4px 0px var(--sketch-dark);
+  transition: all 0.1s ease;
+  font-family: inherit;
+  font-size: 1.25rem;
+  text-transform: uppercase;
+}
+
+.doodle-button:hover {
+  transform: rotate(0deg) translateY(-2px);
+  box-shadow: 6px 6px 0px var(--sketch-dark);
+}
+
+.doodle-button:active {
+  transform: rotate(1deg) translateY(0px);
+  box-shadow: 2px 2px 0px var(--sketch-dark);
+}
+
+@keyframes wobble {
+  0%, 100% { transform: rotate(-2deg); }
+  50% { transform: rotate(2deg); }
+}
+
+.animate-wobble {
+  animation: wobble 3s ease-in-out infinite;
+}
+
+.scribble-divider {
+  height: 8px;
+  /* Simple CSS scribble replacement if SVG fails to load */
+  background: linear-gradient(45deg, transparent 45%, var(--sketch-dark) 45%, var(--sketch-dark) 55%, transparent 55%);
+  background-size: 20px 20px;
+  margin: 20px 0;
+}
