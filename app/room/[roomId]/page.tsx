@@ -98,7 +98,7 @@ export default function RoomPage() {
                             setPlayerId(null);
                             window.location.href = '/';
                         }}
-                        className="doodle-button w-full text-xl py-3 bg-red-500 text-white hover:bg-red-600 border-2 border-black"
+                        className="doodle-button w-full text-xl py-3 bg-red-500 text-black hover:bg-red-600 border-2 border-black font-bold uppercase tracking-wider shadow-[4px_4px_0px_rgba(0,0,0,1)] active:translate-y-1 active:shadow-none transition-all"
                     >
                         Go Home 🏠
                     </button>

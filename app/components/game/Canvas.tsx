@@ -36,6 +36,7 @@ function Canvas(props: CanvasProps) {
     // Throttling ref
     const lastBroadcast = useRef<number>(0);
     const BROADCAST_INTERVAL = 16; // 60fps target
+    const canvasRect = useRef<DOMRect | null>(null); // Cache for performance
 
     useEffect(() => {
         if (!canvasRef.current) return;
@@ -106,8 +107,11 @@ function Canvas(props: CanvasProps) {
         if (!isDrawer || !canvasRef.current) return;
         e.preventDefault(); // Prevent scrolling on touch
 
+        // Cache the rect once at the start of the stroke
+        canvasRect.current = canvasRef.current.getBoundingClientRect();
+
         setIsDrawing(true);
-        const point = getCanvasPoint(e, canvasRef.current);
+        const point = getCanvasPoint(e, canvasRef.current, canvasRect.current);
         strokeBuffer.current = [point];
 
         const ctx = canvasRef.current.getContext('2d');
@@ -130,7 +134,15 @@ function Canvas(props: CanvasProps) {
 
     const handleMove = (e: React.MouseEvent | React.TouchEvent) => {
         if (!isDrawer || !isDrawing || !canvasRef.current) return;
-        const point = getCanvasPoint(e, canvasRef.current);
+
+        // Use cached rect for smooth performance
+        let rect = canvasRect.current;
+        if (!rect) {
+            rect = canvasRef.current.getBoundingClientRect();
+            canvasRect.current = rect;
+        }
+
+        const point = getCanvasPoint(e, canvasRef.current, rect);
         strokeBuffer.current.push(point);
 
         // Local Drawing (Immediate Feedback)
@@ -411,7 +423,7 @@ function Canvas(props: CanvasProps) {
                     onTouchStart={handleStart}
                     onTouchMove={handleMove}
                     onTouchEnd={handleEnd}
-                    className="touch-none block w-full h-full object-contain mx-auto"
+                    className="touch-none block w-full h-full mx-auto"
                     style={{ touchAction: 'none' }}
                 />
 

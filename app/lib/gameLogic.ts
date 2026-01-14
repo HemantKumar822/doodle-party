@@ -1,7 +1,11 @@
 import { StrokePoint } from "@/app/types/game";
 
-export function getCanvasPoint(e: React.MouseEvent | React.TouchEvent, canvas: HTMLCanvasElement): StrokePoint {
-    const rect = canvas.getBoundingClientRect();
+export function getCanvasPoint(
+    e: React.MouseEvent | React.TouchEvent,
+    canvas: HTMLCanvasElement,
+    cachedRect?: DOMRect
+): StrokePoint {
+    const rect = cachedRect || canvas.getBoundingClientRect();
     let clientX = 0;
     let clientY = 0;
 

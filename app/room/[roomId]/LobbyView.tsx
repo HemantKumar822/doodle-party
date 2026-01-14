@@ -55,9 +55,10 @@ export default function LobbyView({ room, players: rawPlayers, currentPlayerId }
 
         try {
             const { error } = await supabase
-                .from('players')
-                .delete()
-                .eq('id', playerId);
+                .rpc('kick_player', {
+                    requester_player_id: currentPlayerId, // Authenticate via "Knowledge of ID"
+                    target_player_id: playerId
+                });
 
             if (error) {
                 // Revert optimistic update if failed
