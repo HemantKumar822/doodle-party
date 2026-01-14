@@ -6,6 +6,8 @@ import { Room, Player, Guess, DEFAULT_SETTINGS, DiceBearAvatarConfig } from '@/a
 import { COLORS } from '@/app/design_system';
 import { isFuzzyMatch, calculateGuessPoints, wordToUnderscores } from '@/app/lib/gameUtils';
 import { useSoundManager } from '@/app/lib/soundManager';
+import { getWordChoices, WordChoice, getDrawerBonus, getGuesserPoints, DIFFICULTY_CONFIG } from '@/app/lib/wordSelector';
+import { WordDifficulty } from '@/app/data/words';
 import Canvas from '@/app/components/game/Canvas';
 import GameHeader from '@/app/components/game/GameHeader';
 import WordSelector from '@/app/components/game/WordSelector';
@@ -20,13 +22,7 @@ interface GameViewProps {
     currentPlayerId: string;
 }
 
-const WORDS = ['APPLE', 'ROBOT', 'VACUUM', 'MOUNTAIN', 'DOLPHIN', 'GALAXY', 'PIZZA', 'DRAGON', 'BEACH', 'UMBRELLA', 'CASTLE', 'RAINBOW', 'ELEPHANT', 'BICYCLE', 'CAMERA', 'SUNSHINE', 'PENGUIN', 'ROCKET'];
 
-// FIX #11: Helper to pick N random words
-function getRandomWords(arr: string[], n: number): string[] {
-    const shuffled = [...arr].sort(() => Math.random() - 0.5);
-    return shuffled.slice(0, n);
-}
 
 export default function GameView({ room, players, currentPlayerId }: GameViewProps) {
     const [timeLeft, setTimeLeft] = useState(0);
@@ -35,10 +31,12 @@ export default function GameView({ room, players, currentPlayerId }: GameViewPro
     const [showWordModal, setShowWordModal] = useState(false);
     const [showScoreboard, setShowScoreboard] = useState(false);
     const [hasGuessedCorrectly, setHasGuessedCorrectly] = useState(false);
-    const [wordChoices, setWordChoices] = useState<string[]>([]);
+    const [wordChoices, setWordChoices] = useState<WordChoice[]>([]);
+    const [selectedDifficulty, setSelectedDifficulty] = useState<WordDifficulty>('easy');
     const [wordSelectionTime, setWordSelectionTime] = useState(10);
     const [wordSelectionDeadline, setWordSelectionDeadline] = useState<number | null>(null); // Fix #43: Drift-proof timer
     const [correctGuessers, setCorrectGuessers] = useState<Set<string>>(new Set());
+    const [usedWords, setUsedWords] = useState<Set<string>>(new Set()); // Track used words to prevent repeats
 
     // Word Hints - revealed letter positions
     const [revealedLetters, setRevealedLetters] = useState<Set<number>>(new Set());
@@ -232,14 +230,15 @@ export default function GameView({ room, players, currentPlayerId }: GameViewPro
     useEffect(() => {
         if (isDrawer && !room.current_word && room.status === 'playing') {
             setShowWordModal(true);
-            const wordCount = room.settings?.word_count || DEFAULT_SETTINGS.word_count;
-            setWordChoices(getRandomWords(WORDS, wordCount));
+            // Use new smart word selector (one from each difficulty)
+            const choices = getWordChoices(usedWords, 3);
+            setWordChoices(choices);
             setWordSelectionTime(10);
             setWordSelectionDeadline(Date.now() + 10000); // 10s from now
         } else {
             setShowWordModal(false);
         }
-    }, [isDrawer, room.current_word, room.status]);
+    }, [isDrawer, room.current_word, room.status, usedWords]);
 
     // Play "your turn" sound when it's drawer's turn
     useEffect(() => {
@@ -258,9 +257,9 @@ export default function GameView({ room, players, currentPlayerId }: GameViewPro
                 setWordSelectionTime(Math.max(0, left));
 
                 if (left <= 0) {
-                    // Auto-select first word
+                    // Auto-select first word (usually easiest)
                     if (wordChoices.length > 0) {
-                        selectWord(wordChoices[0]);
+                        selectWord(wordChoices[0].word, wordChoices[0].difficulty);
                     }
                 }
             }
@@ -303,8 +302,13 @@ export default function GameView({ room, players, currentPlayerId }: GameViewPro
         lastTurnWordSelectedAt.current = room.word_selected_at || null;
     }, [room.word_selected_at]);
 
-    const selectWord = async (word: string) => {
+    const selectWord = async (word: string, difficulty: WordDifficulty) => {
         playSound('pop'); // Play pop sound on word select
+        setSelectedDifficulty(difficulty);
+
+        // Track used words to prevent repeats
+        setUsedWords(prev => new Set(prev).add(word));
+
         const drawTime = room.settings?.draw_time || DEFAULT_SETTINGS.draw_time;
         const turnEndsAt = new Date(Date.now() + drawTime * 1000).toISOString();
         await supabase.from('rooms').update({
@@ -313,6 +317,8 @@ export default function GameView({ room, players, currentPlayerId }: GameViewPro
             word_selected_at: new Date().toISOString()
         }).eq('id', room.id);
         setShowWordModal(false);
+
+        logger.info(`Word selected: "${word}" (${difficulty}) - Drawer bonus: +${getDrawerBonus(difficulty)} pts`, { context: 'game' });
     };
 
     const sendGuess = async (e: React.FormEvent) => {
