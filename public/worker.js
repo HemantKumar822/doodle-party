@@ -8,7 +8,7 @@ self.onmessage = function (e) {
         if (!intervalId) {
             intervalId = setInterval(() => {
                 self.postMessage('tick');
-            }, 1000);
+            }, 500); // Poll every 500ms for snappier turn-end detection
         }
     } else if (e.data === 'stop') {
         if (intervalId) {

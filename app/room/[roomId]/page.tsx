@@ -7,6 +7,7 @@ import JoinScreen from './JoinScreen';
 import LobbyView from './LobbyView';
 import { useParams } from 'next/navigation';
 import GameView from './GameView';
+import ErrorBoundary from '@/app/components/ErrorBoundary';
 import logger from '@/app/lib/logger';
 
 export default function RoomPage() {
@@ -44,11 +45,28 @@ export default function RoomPage() {
     };
 
     if (error) {
-        return <div className="p-10 text-center text-red-500 font-bold">Error: {error}</div>;
+        return (
+            <div className="flex flex-col items-center justify-center min-h-screen p-8 text-center">
+                <div className="text-6xl mb-4">😵</div>
+                <h2 className="text-2xl font-bold mb-2 text-red-500">Connection Error</h2>
+                <p className="text-gray-600 mb-6">{error}</p>
+                <button
+                    onClick={() => window.location.reload()}
+                    className="doodle-button px-6 py-2"
+                >
+                    Retry
+                </button>
+            </div>
+        );
     }
 
     if (!room) {
-        return <div className="flex items-center justify-center min-h-screen">Loading party...</div>;
+        return (
+            <div className="flex flex-col items-center justify-center min-h-screen">
+                <div className="animate-bounce text-4xl mb-4">🎨</div>
+                <div className="text-xl font-bold">Loading party...</div>
+            </div>
+        );
     }
 
     // If no player ID, show join screen
@@ -91,18 +109,25 @@ export default function RoomPage() {
 
     // Show loading if we just joined but player not in list yet
     if (playerId && !currentPlayer && justJoinedRef.current) {
-        return <div className="flex items-center justify-center min-h-screen">
-            <div className="animate-bounce text-4xl mb-4">🎉</div>
-            <div className="text-2xl font-bold font-display">Joining Party...</div>
-        </div>;
+        return (
+            <div className="flex flex-col items-center justify-center min-h-screen">
+                <div className="animate-bounce text-4xl mb-4">🎉</div>
+                <div className="text-2xl font-bold font-display">Joining Party...</div>
+            </div>
+        );
     }
 
     if (room.status === 'waiting') {
-        return <LobbyView room={room} players={players} currentPlayerId={playerId} />;
+        return (
+            <ErrorBoundary>
+                <LobbyView room={room} players={players} currentPlayerId={playerId} />
+            </ErrorBoundary>
+        );
     }
 
     return (
-        <GameView room={room} players={players} currentPlayerId={playerId} />
+        <ErrorBoundary>
+            <GameView room={room} players={players} currentPlayerId={playerId} />
+        </ErrorBoundary>
     );
 }
-

@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, useCallback } from 'react';
+import React, { useEffect, useRef, useState, useCallback } from 'react';
 import { supabase } from '@/lib/supabase';
 import { COLORS } from '@/app/design_system';
 import { getCanvasPoint, drawStroke, floodFill } from '@/app/lib/gameLogic';
@@ -13,7 +13,7 @@ interface CanvasProps {
     wordSelectedAt?: string | null;
 }
 
-export default function Canvas(props: CanvasProps) {
+function Canvas(props: CanvasProps) {
     const { roomId, isDrawer, artistName, width = 800, height = 600 } = props;
     const canvasRef = useRef<HTMLCanvasElement>(null);
     const [tool, setTool] = useState<'pen' | 'eraser' | 'fill'>('pen');
@@ -266,38 +266,49 @@ export default function Canvas(props: CanvasProps) {
     };
 
     return (
-        <div className="flex flex-col md:flex-row gap-4">
-            {/* Toolbar */}
+        <div className="relative w-full h-full flex flex-col md:flex-row gap-4">
+            {/* Toolbar - Floating Pill on MOBILE, Sidebar on DESKTOP */}
+            {/* Rendered FIRST to appear on LEFT on Desktop */}
             {isDrawer && (
-                <div className="flex flex-row md:flex-col gap-2 p-4 sketchy-border bg-white min-w-[80px]">
-                    <div className="text-sm font-bold mb-2">Tools</div>
-                    <button onClick={() => setTool('pen')} className={`p-2 border-2 ${tool === 'pen' ? 'border-black bg-yellow-100' : 'border-transparent'}`}>✏️</button>
-                    <button onClick={() => setTool('eraser')} className={`p-2 border-2 ${tool === 'eraser' ? 'border-black bg-yellow-100' : 'border-transparent'}`}>🧹</button>
-                    <button onClick={() => setTool('fill')} className={`p-2 border-2 ${tool === 'fill' ? 'border-black bg-yellow-100' : 'border-transparent'}`}>🪣</button>
+                <div className="
+                    absolute bottom-4 left-1/2 -translate-x-1/2 flex flex-row items-center gap-2 p-2 bg-white border-2 border-black rounded-full shadow-xl z-20
+                    md:static md:translate-x-0 md:flex-col md:items-stretch md:p-4 md:sketchy-border md:rounded-none md:shadow-none md:min-w-[80px] md:h-auto
+                ">
+                    <div className="hidden md:block text-sm font-bold mb-2">Tools</div>
 
-                    <div className="h-px bg-gray-300 my-1" />
+                    {/* Tool Group */}
+                    <div className="flex flex-row md:flex-col gap-1">
+                        <button onClick={() => setTool('pen')} className={`p-2 md:p-2 rounded-full md:rounded-none border-2 ${tool === 'pen' ? 'border-black bg-yellow-100' : 'border-transparent'}`} title="Pen">✏️</button>
+                        <button onClick={() => setTool('eraser')} className={`p-2 md:p-2 rounded-full md:rounded-none border-2 ${tool === 'eraser' ? 'border-black bg-yellow-100' : 'border-transparent'}`} title="Eraser">🧹</button>
+                        <button onClick={() => setTool('fill')} className={`p-2 md:p-2 rounded-full md:rounded-none border-2 ${tool === 'fill' ? 'border-black bg-yellow-100' : 'border-transparent'}`} title="Fill">🪣</button>
+                    </div>
+
+                    <div className="w-px h-6 bg-gray-300 mx-1 md:w-full md:h-px md:mx-0 md:my-1" />
 
                     {/* Undo/Redo */}
-                    <div className="flex gap-1">
+                    <div className="flex flex-row md:flex-col gap-1">
                         <button
                             onClick={undo}
                             disabled={!canUndo}
-                            className={`p-2 border-2 rounded ${canUndo ? 'hover:bg-gray-100' : 'opacity-30 cursor-not-allowed'}`}
-                            title="Undo (Ctrl+Z)"
+                            className={`p-2 rounded-full md:rounded-none border-2 ${canUndo ? 'hover:bg-gray-100 border-transparent' : 'opacity-30 cursor-not-allowed border-transparent'}`}
+                            title="Undo"
                         >↩️</button>
                         <button
                             onClick={redo}
                             disabled={!canRedo}
-                            className={`p-2 border-2 rounded ${canRedo ? 'hover:bg-gray-100' : 'opacity-30 cursor-not-allowed'}`}
-                            title="Redo (Ctrl+Y)"
+                            className={`p-2 rounded-full md:rounded-none border-2 ${canRedo ? 'hover:bg-gray-100 border-transparent' : 'opacity-30 cursor-not-allowed border-transparent'}`}
+                            title="Redo"
                         >↪️</button>
                     </div>
 
-                    <button onClick={clearCanvas} className="p-2 border-2 border-red-200 hover:bg-red-100 rounded">🗑️</button>
+                    <div className="w-px h-6 bg-gray-300 mx-1 md:w-full md:h-px md:mx-0 md:my-1" />
 
-                    <div className="h-px bg-gray-300 my-2" />
+                    <button onClick={clearCanvas} className="p-2 border-2 border-red-200 hover:bg-red-100 rounded-full md:rounded-none text-red-500" title="Clear">🗑️</button>
 
-                    <div className="grid grid-cols-2 gap-1">
+                    <div className="w-px h-6 bg-gray-300 mx-1 md:w-full md:h-px md:mx-0 md:my-2" />
+
+                    {/* Colors */}
+                    <div className="flex flex-row md:grid md:grid-cols-2 gap-1">
                         {Object.values(COLORS.palette).map((c) => (
                             <button
                                 key={c}
@@ -308,14 +319,15 @@ export default function Canvas(props: CanvasProps) {
                         ))}
                     </div>
 
-                    <div className="h-px bg-gray-300 my-2" />
+                    <div className="w-px h-6 bg-gray-300 mx-1 md:w-full md:h-px md:mx-0 md:my-2" />
 
-                    <div className="flex flex-col gap-2">
+                    {/* Thickness */}
+                    <div className="flex flex-row md:flex-col gap-2 items-center">
                         {[2, 5, 10].map(size => (
                             <button
                                 key={size}
                                 onClick={() => setThickness(size)}
-                                className={`w-full h-8 flex items-center justify-center border-2 ${thickness === size ? 'border-black' : 'border-transparent'}`}
+                                className={`w-8 h-8 flex items-center justify-center border-2 rounded-full ${thickness === size ? 'border-black bg-gray-100' : 'border-transparent'}`}
                             >
                                 <div className="bg-black rounded-full" style={{ width: size * 2, height: size * 2 }} />
                             </button>
@@ -325,7 +337,7 @@ export default function Canvas(props: CanvasProps) {
             )}
 
             {/* Canvas Area */}
-            <div className="relative sketchy-border bg-white overflow-hidden cursor-crosshair">
+            <div className="relative flex-1 w-full h-full md:h-auto sketchy-border bg-white overflow-hidden cursor-crosshair touch-none">
                 <canvas
                     ref={canvasRef}
                     width={width}
@@ -337,8 +349,8 @@ export default function Canvas(props: CanvasProps) {
                     onTouchStart={handleStart}
                     onTouchMove={handleMove}
                     onTouchEnd={handleEnd}
-                    className="touch-none block w-full h-auto aspect-[4/3] max-w-[800px] mx-auto shadow-sm"
-                    style={{ touchAction: 'none' }} // Extra safety for mobile scroll prevention
+                    className="touch-none block w-full h-full object-contain mx-auto"
+                    style={{ touchAction: 'none' }}
                 />
                 {!isDrawer && <div className="absolute top-2 right-2 bg-black/50 text-white px-3 py-1 rounded-full pointer-events-none text-xs font-bold backdrop-blur-sm animate-pulse">
                     Watching {artistName ? `${artistName}` : 'Artist'} 🎨
@@ -347,3 +359,5 @@ export default function Canvas(props: CanvasProps) {
         </div>
     );
 }
+
+export default React.memo(Canvas);

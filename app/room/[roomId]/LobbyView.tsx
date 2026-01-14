@@ -68,7 +68,6 @@ export default function LobbyView({ room, players: rawPlayers, currentPlayerId }
                 });
 
                 logger.error(`Failed to kick player: ${error.message}`, { context: 'player', data: error });
-                console.error('Kick error:', error);
                 alert(`Failed to kick player: ${error.message}`);
             } else {
                 logger.success(`Player kicked: ${playerToKick?.display_name}`, { context: 'player' });
@@ -82,7 +81,6 @@ export default function LobbyView({ room, players: rawPlayers, currentPlayerId }
             });
 
             logger.error('Kick player error', { context: 'player', data: e });
-            console.error(e);
         }
     };
 

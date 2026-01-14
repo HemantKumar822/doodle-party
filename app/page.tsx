@@ -78,10 +78,6 @@ export default function Home() {
 
       if (playerError) {
         logger.room.error('Failed to create host player', playerError);
-        console.error('Full player error details:', JSON.stringify(playerError, null, 2));
-        console.error('Error message:', playerError.message);
-        console.error('Error code:', playerError.code);
-        console.error('Error details:', playerError.details);
         throw playerError;
       }
 
@@ -95,7 +91,6 @@ export default function Home() {
     } catch (e: unknown) {
       const err = e as { message?: string; code?: string; details?: string };
       logger.room.error('Create party failed', e);
-      console.error('Caught error:', e);
       alert(`Error creating party: ${err?.message || 'Unknown error'}. Please try again.`);
     } finally {
       setLoading(false);

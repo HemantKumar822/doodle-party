@@ -1,12 +1,15 @@
 'use client';
 
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { supabase } from '@/lib/supabase';
 import { Room, Player, Guess, DEFAULT_SETTINGS, DiceBearAvatarConfig } from '@/app/types/game';
 import { COLORS } from '@/app/design_system';
 import { isFuzzyMatch, calculateGuessPoints, wordToUnderscores } from '@/app/lib/gameUtils';
 import { useSoundManager } from '@/app/lib/soundManager';
 import Canvas from '@/app/components/game/Canvas';
+import GameHeader from '@/app/components/game/GameHeader';
+import WordSelector from '@/app/components/game/WordSelector';
+import ChatPanel from '@/app/components/game/ChatPanel';
 import ScoreboardOverlay from './ScoreboardOverlay';
 import { generateAvatarSvg, defaultAvatarConfig } from '@/app/components/AvatarSelector';
 import logger from '@/app/lib/logger';
@@ -96,69 +99,63 @@ export default function GameView({ room, players, currentPlayerId }: GameViewPro
         }
     }, [timeLeft, room.turn_ends_at, room.current_word, playSound]);
 
-    // Host Game Loop
+    // Extracted "All Guessed" Check - can be called from polling OR after a correct guess
+    const checkAndEndTurnIfAllGuessed = useCallback(async () => {
+        // Only the HOST should trigger this game state change
+        if (!isHost) {
+            return;
+        }
+        // Only check during an active turn
+        if (!room.turn_ends_at || !room.current_word || !room.word_selected_at) {
+            return;
+        }
+
+        const end = new Date(room.turn_ends_at).getTime();
+        if (Date.now() >= end) {
+            return;
+        }
+
+        // 1. Identify guessers (everyone connected except drawer)
+        const connectedPlayers = players.filter(p => p.is_connected);
+        const currentDrawerObj = connectedPlayers.find(p => p.turn_order === room.current_drawer_index);
+        const guesserIds = connectedPlayers
+            .filter(p => p.id !== currentDrawerObj?.id)
+            .map(p => p.id);
+
+        if (guesserIds.length === 0) {
+            return;
+        }
+
+        // 2. Fetch correct guesses for THIS turn
+        const { data: guesses } = await supabase
+            .from('guesses')
+            .select('player_id')
+            .eq('room_id', room.id)
+            .eq('is_correct', true)
+            .gt('guessed_at', room.word_selected_at);
+
+        // 3. Check if all guessers are in the set
+        const successfulGuesserIds = new Set(guesses?.map(g => g.player_id) || []);
+        const allGuessed = guesserIds.every(id => successfulGuesserIds.has(id));
+
+        if (allGuessed) {
+            logger.info('Everyone guessed! Ending turn early.', { context: 'game' });
+            await supabase.from('rooms').update({
+                turn_ends_at: new Date().toISOString()
+            }).eq('id', room.id);
+        }
+    }, [isHost, room.turn_ends_at, room.current_word, room.word_selected_at, room.current_drawer_index, room.id, players]);
+
+    // Host Game Loop (Polling)
     useEffect(() => {
         if (!isHost || room.status !== 'playing') return;
-
-        const checkTurn = async () => {
-            // All Guessed Check (only runs during active turn)
-            if (room.turn_ends_at && room.current_word && room.word_selected_at) {
-                const end = new Date(room.turn_ends_at).getTime();
-                // Only check if turn hasn't ended yet
-                if (Date.now() < end) {
-
-                    // FIX #45: Robust "Everyone Guessed" Logic
-                    // 1. Identify who SHOULD guess (Everyone connected except drawer)
-                    const connectedPlayers = players.filter(p => p.is_connected);
-                    const currentDrawerObj = connectedPlayers.find(p => p.turn_order === room.current_drawer_index);
-
-                    // If NO drawer is found (e.g. disconnected), we still wait for updated player list or just handle normally.
-                    // If drawer is missing, everyone else is a guesser.
-                    const guesserIds = connectedPlayers
-                        .filter(p => p.id !== currentDrawerObj?.id)
-                        .map(p => p.id);
-
-                    if (guesserIds.length === 0) return; // No guessers? Wait.
-
-                    // 2. Fetch all correct guesses for this specific turn
-                    // ROBUST LOGIC: Use a "Hybrid Check" (Time Buffer + Content Match)
-                    // We backdate the time check by 30s to handle extreme clock skew,
-                    // but we strictly filter by the 'guess_text' matching the 'current_word'.
-                    // This ensures we find the valid guesses even if the server is laggy, 
-                    // without picking up guesses from previous rounds (unless the word repeats instantly, which is rare).
-
-                    const timeBuffer = 30 * 1000; // 30 seconds buffer
-                    const generousThreshold = new Date(new Date(room.word_selected_at).getTime() - timeBuffer).toISOString();
-
-                    const { data: guesses } = await supabase
-                        .from('guesses')
-                        .select('player_id')
-                        .eq('room_id', room.id)
-                        .eq('is_correct', true)
-                        .ilike('guess_text', room.current_word) // Ensure it matches CURRENT word
-                        .gt('created_at', generousThreshold);   // Generous window
-
-                    // 3. Verify if EVERY guesser ID is present in the database response
-                    const successfulGuesserIds = new Set(guesses?.map(g => g.player_id) || []);
-                    const allGuessed = guesserIds.every(id => successfulGuesserIds.has(id));
-
-                    if (allGuessed) {
-                        // End turn early
-                        logger.info('Everyone guessed (Robust Check)! Ending turn early.', { context: 'game' });
-                        await supabase.from('rooms').update({
-                            turn_ends_at: new Date().toISOString()
-                        }).eq('id', room.id);
-                    }
-                }
-            }
-        };
 
         // Use Web Worker for accurate timing in background tabs
         const worker = new Worker('/worker.js');
 
         worker.onmessage = (e) => {
             if (e.data === 'tick') {
-                checkTurn();
+                checkAndEndTurnIfAllGuessed();
             }
         };
 
@@ -178,7 +175,7 @@ export default function GameView({ room, players, currentPlayerId }: GameViewPro
                 .select('*', { count: 'exact', head: true })
                 .eq('room_id', room.id)
                 .eq('is_correct', true)
-                .gt('created_at', room.word_selected_at);
+                .gt('guessed_at', room.word_selected_at);
 
             if (count && count > 0) {
                 const drawerPoints = count * 50;
@@ -354,12 +351,16 @@ export default function GameView({ room, players, currentPlayerId }: GameViewPro
         if (isCorrect) {
             setHasGuessedCorrectly(true);
             setCorrectGuessers(prev => new Set(prev).add(currentPlayerId));
-            playSound('correct'); // Play correct sound!
+            playSound('correct');
             const { error } = await supabase.rpc('increment_player_score', {
                 p_player_id: currentPlayerId,
                 p_points: pointsToAward
             });
-            if (error) console.error('Score update error:', error);
+            if (error) logger.error('Score update error', { context: 'game', data: error });
+
+            // INSTANT TURN END CHECK: Trigger immediately after a correct guess
+            // Small delay to ensure the guess is persisted in Supabase before querying
+            setTimeout(() => checkAndEndTurnIfAllGuessed(), 100);
         } else {
             playSound('wrong'); // Play wrong sound
         }
@@ -390,6 +391,8 @@ export default function GameView({ room, players, currentPlayerId }: GameViewPro
         }
     }, [messages]);
 
+    const [isChatOpen, setIsChatOpen] = useState(false);
+
     if (room.status === 'finished') {
         // Game Over Screen
         const winner = [...players].sort((a, b) => b.score - a.score)[0];
@@ -409,39 +412,30 @@ export default function GameView({ room, players, currentPlayerId }: GameViewPro
     const nextDrawer = players.find(p => p.turn_order === (room.current_drawer_index + 1) % players.length);
 
     return (
-        <div className="flex flex-col h-screen max-w-[1400px] mx-auto p-2 md:p-4">
-            {/* Top Bar */}
-            <div className="flex justify-between items-center mb-4 sketchy-border bg-white p-3 shadow-md">
-                <div className="text-xl font-bold">Round {room.current_round} / {room.max_rounds}</div>
-                <div className="text-3xl font-bold font-mono tracking-widest">
-                    {room.current_word && !isDrawer && !hasGuessedCorrectly && !showScoreboard
-                        ? room.current_word.split('').map((c, i) => {
-                            if (c === ' ') return '  ';
-                            if (revealedLetters.has(i)) return c + ' ';
-                            return '_ ';
-                        }).join('')
-                        : (room.current_word || 'CHOOSING...')}
-                </div>
-                <div className="flex items-center gap-3">
-                    <button
-                        onClick={() => {
-                            toggleMute();
-                            playSound('click');
-                        }}
-                        className="text-2xl hover:scale-110 transition-transform"
-                        title={isMuted ? 'Unmute' : 'Mute'}
-                    >
-                        {isMuted ? '🔇' : '🔊'}
-                    </button>
-                    <div className={`text-2xl font-bold ${timeLeft < 10 ? 'text-red-500 animate-pulse' : 'text-black'}`}>
-                        ⏰ {timeLeft}s
-                    </div>
-                </div>
-            </div>
+        // Mobile: Fixed full screen. Desktop: Centered container.
+        <div className="fixed inset-0 overflow-hidden flex flex-col bg-gray-50 md:static md:h-screen md:max-w-[1400px] md:mx-auto md:p-4">
 
-            <div className="flex flex-col md:flex-row gap-4 flex-1 min-h-0">
-                {/* Sidebar: Players */}
-                <div className="w-full md:w-52 flex-shrink-0 flex flex-row md:flex-col gap-2 overflow-x-auto md:overflow-y-auto pr-2">
+            {/* Top Bar */}
+            <GameHeader
+                currentRound={room.current_round}
+                maxRounds={room.max_rounds}
+                currentWord={room.current_word}
+                timeLeft={timeLeft}
+                isDrawer={isDrawer}
+                hasGuessedCorrectly={hasGuessedCorrectly}
+                showScoreboard={showScoreboard}
+                revealedLetters={revealedLetters}
+                isMuted={isMuted}
+                onToggleMute={() => {
+                    toggleMute();
+                    playSound('click');
+                }}
+            />
+
+            <div className="flex flex-col md:flex-row gap-0 md:gap-4 flex-1 min-h-0 relative">
+
+                {/* Players List - Mobile: Horizontal Strip, Desktop: Vertical Sidebar */}
+                <div className="w-full shrink-0 h-16 border-b-2 border-black flex flex-row gap-2 overflow-x-auto items-center px-2 bg-white md:border-0 md:w-52 md:flex-col md:h-auto md:overflow-y-auto md:pr-2">
                     {players.map(p => {
                         const avatarConfig = (p.avatar?.style && p.avatar?.seed)
                             ? { style: p.avatar.style, seed: p.avatar.seed }
@@ -451,8 +445,12 @@ export default function GameView({ room, players, currentPlayerId }: GameViewPro
                         const isLeader = p.score > 0 && p.score === maxScore;
 
                         return (
-                            <div key={p.id} className={`sketchy-border p-2 bg-white flex items-center gap-2 transition-all relative ${safestDrawer && p.id === safestDrawer.id ? 'border-blue-500 bg-blue-50 scale-105 shadow-md' : 'shadow-sm'}`}>
-                                <div className="relative w-10 h-10 flex-shrink-0">
+                            <div key={p.id} className={`
+                                flex-shrink-0 flex items-center gap-2 p-1 border-2 bg-white transition-all relative
+                                ${safestDrawer && p.id === safestDrawer.id ? 'border-blue-500 bg-blue-50 shadow-md' : 'border-black shadow-sm'}
+                                rounded-md md:sketchy-border md:rounded-none md:p-2 md:w-full
+                            `}>
+                                <div className="relative w-8 h-8 md:w-10 md:h-10 flex-shrink-0">
                                     <div className={`w-full h-full rounded-full overflow-hidden border ${isLeader ? 'border-yellow-400 ring-1 ring-yellow-200' : 'border-black'} bg-white`}>
                                         <img
                                             src={generateAvatarSvg(avatarConfig, 48)}
@@ -461,29 +459,24 @@ export default function GameView({ room, players, currentPlayerId }: GameViewPro
                                         />
                                     </div>
                                     {isLeader && (
-                                        <div className="absolute -top-2 -right-1 text-sm filter drop-shadow-sm animate-bounce-slow" title="Leader">
+                                        <div className="absolute -top-2 -right-1 text-xs filter drop-shadow-sm animate-bounce-slow" title="Leader">
                                             👑
                                         </div>
                                     )}
-                                    {p.is_host && (
-                                        <div className="absolute -bottom-1 left-1/2 transform -translate-x-1/2 bg-black text-white text-[8px] font-bold px-1.5 py-px rounded-full uppercase tracking-wider">
-                                            HOST
-                                        </div>
-                                    )}
                                 </div>
-                                <div className="flex-1 min-w-0">
-                                    <div className="truncate text-sm font-bold leading-tight">{p.display_name}</div>
-                                    <div className="text-xs text-gray-500 font-bold leading-tight">Score: {p.score}</div>
+                                <div className="min-w-0 max-w-[80px] md:max-w-none md:flex-1">
+                                    <div className="truncate text-xs md:text-sm font-bold leading-tight">{p.display_name}</div>
+                                    <div className="text-[10px] md:text-xs text-gray-500 font-bold leading-tight">{p.score} pts</div>
                                 </div>
-                                {safestDrawer && p.id === safestDrawer.id && <span className="text-xl">✏️</span>}
-                                {correctGuessers.has(p.id) && <span className="text-green-500 font-bold text-xl">✓</span>}
+                                {safestDrawer && p.id === safestDrawer.id && <span className="text-sm md:text-xl">✏️</span>}
+                                {correctGuessers.has(p.id) && <span className="text-green-500 font-bold text-sm md:text-xl">✓</span>}
                             </div>
                         );
                     })}
                 </div>
 
                 {/* Main: Canvas */}
-                <div className="flex-1 relative min-h-[400px] sketchy-border bg-gray-100 overflow-hidden flex items-center justify-center">
+                <div className="flex-1 relative bg-gray-200 overflow-hidden flex items-center justify-center md:sketchy-border md:bg-gray-100">
                     <Canvas
                         roomId={room.id}
                         isDrawer={isDrawer}
@@ -493,27 +486,24 @@ export default function GameView({ room, players, currentPlayerId }: GameViewPro
                         artistName={safestDrawer?.display_name}
                     />
 
+                    {/* Chat Toggle FAB (Mobile Only) */}
+                    {!isChatOpen && (
+                        <button
+                            onClick={() => setIsChatOpen(true)}
+                            className="md:hidden absolute bottom-4 left-4 z-20 w-12 h-12 bg-white border-2 border-black rounded-full shadow-[2px_2px_0px_rgba(0,0,0,1)] flex items-center justify-center text-xl active:translate-y-1 active:shadow-none transition-all"
+                        >
+                            💬
+                            {/* Unread badge logic could go here */}
+                        </button>
+                    )}
+
                     {/* Word Selection Modal */}
                     {showWordModal && (
-                        <div className="absolute inset-0 bg-black/80 flex items-center justify-center z-10 transition-opacity">
-                            <div className="sketchy-border bg-white p-8 text-center animate-wobble shadow-xl">
-                                <h2 className="text-2xl mb-2 font-bold">It's your turn! Pick a word:</h2>
-                                <div className={`text-4xl font-bold mb-4 ${wordSelectionTime <= 3 ? 'text-red-500 animate-pulse' : 'text-gray-600'}`}>
-                                    {wordSelectionTime}s
-                                </div>
-                                <div className="flex flex-wrap justify-center gap-4">
-                                    {wordChoices.map(w => (
-                                        <button
-                                            key={w}
-                                            onClick={() => selectWord(w)}
-                                            className="doodle-button text-lg bg-mint hover:bg-green-200 transform hover:scale-110 transition-transform"
-                                        >
-                                            {w}
-                                        </button>
-                                    ))}
-                                </div>
-                            </div>
-                        </div>
+                        <WordSelector
+                            words={wordChoices}
+                            timeLeft={wordSelectionTime}
+                            onSelectWord={selectWord}
+                        />
                     )}
 
                     {/* Scoreboard Overlay */}
@@ -534,38 +524,18 @@ export default function GameView({ room, players, currentPlayerId }: GameViewPro
                     )}
                 </div>
 
-                {/* Chat */}
-                <div className="w-full md:w-80 flex-shrink-0 flex flex-col sketchy-border bg-white h-64 md:h-auto shadow-md">
-                    <div className="flex-1 overflow-y-auto p-2 space-y-2 bg-paper" ref={chatRef}>
-                        {messages.map((m, i) => (
-                            <div key={i} className={`text-sm p-1 rounded ${m.is_correct ? 'bg-green-100 text-green-800 border border-green-300' : 'bg-white border border-gray-100'}`}>
-                                <span className="font-bold">{m.name}: </span>
-                                {m.is_correct ? <span>🎉 Guessed correctly!</span> : m.guess_text}
-                            </div>
-                        ))}
-                    </div>
-
-                    {!isDrawer ? (
-                        <form onSubmit={sendGuess} className="p-2 border-t-2 border-gray-200 bg-gray-50 flex gap-2">
-                            <input
-                                className="flex-1 border-2 border-black rounded px-2 py-1 font-inherit focus:ring-2 focus:ring-yellow-300 outline-none"
-                                placeholder="Type your guess here..."
-                                value={guess}
-                                onChange={e => setGuess(e.target.value)}
-                                maxLength={30}
-                                autoFocus
-                            />
-                            <button type="submit" className="doodle-button py-1 px-4 text-sm">
-                                Send
-                            </button>
-                        </form>
-                    ) : (
-                        <div className="p-2 border-t font-bold text-center text-gray-500 bg-gray-100">
-                            Draw the word! NO CHEATING!
-                        </div>
-                    )}
-                </div>
+                {/* Chat - Mobile: Bottom Sheet, Desktop: Sidebar */}
+                <ChatPanel
+                    messages={messages}
+                    isDrawer={isDrawer}
+                    guess={guess}
+                    onGuessChange={setGuess}
+                    onSubmitGuess={sendGuess}
+                    isOpen={isChatOpen}
+                    onClose={() => setIsChatOpen(false)}
+                />
             </div>
         </div>
     );
 }
+
