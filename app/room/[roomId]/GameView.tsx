@@ -231,14 +231,21 @@ export default function GameView({ room, players, currentPlayerId }: GameViewPro
         if (isDrawer && !room.current_word && room.status === 'playing') {
             setShowWordModal(true);
             // Use new smart word selector (one from each difficulty)
-            const choices = getWordChoices(usedWords, 3);
-            setWordChoices(choices);
-            setWordSelectionTime(10);
-            setWordSelectionDeadline(Date.now() + 10000); // 10s from now
+            // FIX: Prevent regeneration if we already have choices (prevents glitch when usedWords updates on select)
+            if (wordChoices.length === 0) {
+                const choices = getWordChoices(usedWords, 3);
+                setWordChoices(choices);
+                setWordSelectionTime(10);
+                setWordSelectionDeadline(Date.now() + 10000); // 10s from now
+            }
         } else {
             setShowWordModal(false);
+            // Clear choices when selection is done so next turn gets new ones
+            if (wordChoices.length > 0) {
+                setWordChoices([]);
+            }
         }
-    }, [isDrawer, room.current_word, room.status, usedWords]);
+    }, [isDrawer, room.current_word, room.status, usedWords, wordChoices.length]);
 
     // Play "your turn" sound when it's drawer's turn
     useEffect(() => {
@@ -402,13 +409,83 @@ export default function GameView({ room, players, currentPlayerId }: GameViewPro
     if (room.status === 'finished') {
         // Game Over Screen
         const winner = [...players].sort((a, b) => b.score - a.score)[0];
+
+        const resetGame = async () => {
+            if (!isHost) return;
+
+            // Reset room state to 'waiting' (Lobby)
+            await supabase.from('rooms').update({
+                status: 'waiting',
+                current_round: 1,
+                current_drawer_index: 0,
+                current_word: null,
+                turn_ends_at: null,
+                word_selected_at: null
+            }).eq('id', room.id);
+
+            // Reset all player scores
+            await supabase.from('players').update({
+                score: 0
+            }).eq('room_id', room.id);
+        };
         return (
-            <div className="flex flex-col items-center justify-center min-h-screen">
-                <div className="sketchy-border bg-white p-10 text-center animate-wobble">
-                    <h1 className="text-6xl mb-4">🎉 GAME OVER! 🎉</h1>
-                    <div className="text-4xl mb-4">Winner: {winner?.display_name || 'Nobody?'}</div>
-                    <div className="text-2xl mb-8">Score: {winner?.score}</div>
-                    <a href="/" className="doodle-button text-xl">New Game</a>
+            <div className="flex flex-col items-center justify-center min-h-screen p-4 bg-paper pattern-grid-lg">
+                <div className="w-full max-w-md bg-white border-4 border-black shadow-[8px_8px_0px_rgba(0,0,0,1)] p-6 md:p-10 text-center animate-in fade-in zoom-in duration-300 rounded-xl relative">
+                    {/* Confetti/Decoration */}
+                    <div className="absolute -top-6 -left-6 text-4xl animate-bounce-slow" style={{ animationDelay: '0s' }}>🎈</div>
+                    <div className="absolute -top-6 -right-6 text-4xl animate-bounce-slow" style={{ animationDelay: '0.5s' }}>🎈</div>
+
+                    <h1 className="text-3xl md:text-5xl font-black mb-6 uppercase tracking-wider transform -rotate-1">
+                        Game Over!
+                    </h1>
+
+                    {/* Winner Display */}
+                    <div className="flex flex-col items-center mb-8">
+                        <div className="relative mb-4">
+                            <div className="w-24 h-24 md:w-32 md:h-32 rounded-full border-4 border-black overflow-hidden bg-white shadow-md">
+                                {winner && (
+                                    <img
+                                        src={generateAvatarSvg(winner.avatar?.style && winner.avatar?.seed ? { style: winner.avatar.style, seed: winner.avatar.seed } : defaultAvatarConfig())}
+                                        alt={winner.display_name}
+                                        className="w-full h-full object-cover"
+                                    />
+                                )}
+                            </div>
+                            <div className="absolute -top-8 left-1/2 -translate-x-1/2 text-5xl md:text-6xl filter drop-shadow-md animate-bounce">
+                                👑
+                            </div>
+                        </div>
+
+                        <div className="text-xl md:text-2xl font-bold mb-1">Winner</div>
+                        <div className="text-2xl md:text-4xl font-black text-transparent bg-clip-text bg-gradient-to-r from-yellow-400 to-orange-500 mb-2">
+                            {winner?.display_name || 'Nobody?'}
+                        </div>
+                        <div className="text-lg md:text-xl font-bold bg-black text-white px-4 py-1 rounded-full transform rotate-1">
+                            {winner?.score} points
+                        </div>
+                    </div>
+
+                    <div className="flex flex-col gap-3">
+                        {isHost ? (
+                            <button
+                                onClick={resetGame}
+                                className="w-full bg-green-400 hover:bg-green-500 text-black border-2 border-black font-bold text-lg py-3 px-6 rounded-lg shadow-[4px_4px_0px_rgba(0,0,0,1)] active:translate-y-1 active:shadow-none transition-all uppercase tracking-wide"
+                            >
+                                Play Again 🔄
+                            </button>
+                        ) : (
+                            <div className="text-gray-500 font-bold mb-2 animate-pulse">
+                                Waiting for host to restart...
+                            </div>
+                        )}
+
+                        <a
+                            href="/"
+                            className="block w-full bg-yellow-300 hover:bg-yellow-400 text-black border-2 border-black font-bold text-lg py-3 px-6 rounded-lg shadow-[4px_4px_0px_rgba(0,0,0,1)] active:translate-y-1 active:shadow-none transition-all uppercase tracking-wide"
+                        >
+                            New Game 🏠
+                        </a>
+                    </div>
                 </div>
             </div>
         )
@@ -492,17 +569,6 @@ export default function GameView({ room, players, currentPlayerId }: GameViewPro
                         artistName={safestDrawer?.display_name}
                     />
 
-                    {/* Chat Toggle FAB (Mobile Only) */}
-                    {!isChatOpen && (
-                        <button
-                            onClick={() => setIsChatOpen(true)}
-                            className="md:hidden absolute bottom-4 left-4 z-20 w-12 h-12 bg-white border-2 border-black rounded-full shadow-[2px_2px_0px_rgba(0,0,0,1)] flex items-center justify-center text-xl active:translate-y-1 active:shadow-none transition-all"
-                        >
-                            💬
-                            {/* Unread badge logic could go here */}
-                        </button>
-                    )}
-
                     {/* Word Selection Modal */}
                     {showWordModal && (
                         <WordSelector
@@ -530,7 +596,7 @@ export default function GameView({ room, players, currentPlayerId }: GameViewPro
                     )}
                 </div>
 
-                {/* Chat - Mobile: Bottom Sheet, Desktop: Sidebar */}
+                {/* Chat - Mobile: Peek Bottom Sheet, Desktop: Sidebar */}
                 <ChatPanel
                     messages={messages}
                     isDrawer={isDrawer}
@@ -538,7 +604,7 @@ export default function GameView({ room, players, currentPlayerId }: GameViewPro
                     onGuessChange={setGuess}
                     onSubmitGuess={sendGuess}
                     isOpen={isChatOpen}
-                    onClose={() => setIsChatOpen(false)}
+                    onToggle={() => setIsChatOpen(!isChatOpen)}
                 />
             </div>
         </div>

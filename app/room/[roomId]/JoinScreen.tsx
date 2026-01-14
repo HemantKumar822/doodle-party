@@ -183,7 +183,7 @@ export default function JoinScreen({ roomId, onJoin }: JoinScreenProps) {
                         <button
                             onClick={() => joinRoom(name)}
                             disabled={!name.trim()}
-                            className="doodle-button w-full bg-green-400 hover:bg-green-500 text-white text-2xl py-3 mt-4 disabled:opacity-50 disabled:cursor-not-allowed"
+                            className="doodle-button w-full bg-green-400 hover:bg-green-500 text-black text-2xl py-3 mt-4 disabled:opacity-50 disabled:cursor-not-allowed"
                         >
                             Let's Go! 🎨
                         </button>

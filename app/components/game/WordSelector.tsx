@@ -49,7 +49,10 @@ function WordSelector({ words, timeLeft, onSelectWord }: WordSelectorProps) {
                                     {/* Difficulty Badge */}
                                     <div
                                         className="flex items-center gap-2 px-2 py-1 rounded-full text-sm font-bold"
-                                        style={{ backgroundColor: config.color, color: 'white' }}
+                                        style={{
+                                            backgroundColor: config.color,
+                                            color: choice.difficulty === 'medium' ? 'black' : 'white'
+                                        }}
                                     >
                                         {config.emoji} {config.label}
                                     </div>

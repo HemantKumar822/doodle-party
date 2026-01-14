@@ -103,8 +103,8 @@ export default function LobbyView({ room, players: rawPlayers, currentPlayerId }
             <div className="max-w-2xl w-full">
                 {/* Header */}
                 <div className="sketchy-border bg-white p-6 mb-6 text-center relative">
-                    <h1 className="text-4xl mb-2">Party Code: <span className="text-blue-500">{room.room_code}</span></h1>
-                    <button onClick={copyLink} className="text-sm underline text-gray-500 hover:text-black">
+                    <h1 className="text-4xl mb-2">Party Code: <span className="text-blue-600 font-bold tracking-wider">{room.room_code}</span></h1>
+                    <button onClick={copyLink} className="text-sm font-bold underline text-gray-700 hover:text-black">
                         Copy Invite Link 📋
                     </button>
                 </div>

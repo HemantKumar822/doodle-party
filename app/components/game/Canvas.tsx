@@ -22,6 +22,10 @@ function Canvas(props: CanvasProps) {
     const [isDrawing, setIsDrawing] = useState(false);
     const strokeBuffer = useRef<StrokePoint[]>([]);
 
+    // Mobile toolbar state
+    const [showColorPicker, setShowColorPicker] = useState(false);
+    const [showSizePicker, setShowSizePicker] = useState(false);
+
     // Undo/Redo History (stores canvas ImageData snapshots)
     const historyRef = useRef<ImageData[]>([]);
     const historyIndexRef = useRef<number>(-1);
@@ -78,10 +82,10 @@ function Canvas(props: CanvasProps) {
         };
     }, [roomId, isDrawer]);
 
-    // FIX #5: Clear canvas when turn changes (detected by word_selected_at change)
+    // FIX #5: Clear canvas AND history when turn changes (detected by word_selected_at change)
     const lastWordSelectedAt = useRef<string | null>(null);
     useEffect(() => {
-        // If word_selected_at changes (new turn started), clear canvas for everyone
+        // If word_selected_at changes (new turn started), clear canvas and history for everyone
         if (lastWordSelectedAt.current !== null && lastWordSelectedAt.current !== props.wordSelectedAt) {
             const ctx = canvasRef.current?.getContext('2d');
             if (ctx && canvasRef.current) {
@@ -89,6 +93,11 @@ function Canvas(props: CanvasProps) {
                 ctx.fillStyle = COLORS.paper;
                 ctx.fillRect(0, 0, canvasRef.current.width, canvasRef.current.height);
             }
+            // Clear undo/redo history for new turn (saves memory and makes sense UX-wise)
+            historyRef.current = [];
+            historyIndexRef.current = -1;
+            setCanUndo(false);
+            setCanRedo(false);
         }
         lastWordSelectedAt.current = props.wordSelectedAt || null;
     }, [props.wordSelectedAt]);
@@ -266,73 +275,126 @@ function Canvas(props: CanvasProps) {
     };
 
     return (
-        <div className="relative w-full h-full flex flex-col md:flex-row gap-4">
-            {/* Toolbar - Floating Pill on MOBILE, Sidebar on DESKTOP */}
-            {/* Rendered FIRST to appear on LEFT on Desktop */}
+        <div className="relative w-full h-full flex flex-col md:flex-row gap-2">
+            {/* Toolbar - Floating Pill on MOBILE, Compact Sidebar on DESKTOP */}
             {isDrawer && (
                 <div className="
-                    absolute bottom-4 left-1/2 -translate-x-1/2 flex flex-row items-center gap-2 p-2 bg-white border-2 border-black rounded-full shadow-xl z-20
-                    md:static md:translate-x-0 md:flex-col md:items-stretch md:p-4 md:sketchy-border md:rounded-none md:shadow-none md:min-w-[80px] md:h-auto
+                    absolute bottom-[48px] left-0 w-full flex flex-row items-center justify-between px-4 py-2 bg-white border-t border-black shadow-[0_-2px_10px_rgba(0,0,0,0.1)] z-20
+                    md:static md:translate-x-0 md:flex-col md:items-stretch md:justify-start md:p-3 md:sketchy-border md:rounded-none md:shadow-none md:w-32 md:h-auto md:gap-3 md:bg-white
                 ">
-                    <div className="hidden md:block text-sm font-bold mb-2">Tools</div>
+                    <div className="hidden md:block text-xs font-bold text-center mb-1">Tools</div>
 
-                    {/* Tool Group */}
-                    <div className="flex flex-row md:flex-col gap-1">
-                        <button onClick={() => setTool('pen')} className={`p-2 md:p-2 rounded-full md:rounded-none border-2 ${tool === 'pen' ? 'border-black bg-yellow-100' : 'border-transparent'}`} title="Pen">✏️</button>
-                        <button onClick={() => setTool('eraser')} className={`p-2 md:p-2 rounded-full md:rounded-none border-2 ${tool === 'eraser' ? 'border-black bg-yellow-100' : 'border-transparent'}`} title="Eraser">🧹</button>
-                        <button onClick={() => setTool('fill')} className={`p-2 md:p-2 rounded-full md:rounded-none border-2 ${tool === 'fill' ? 'border-black bg-yellow-100' : 'border-transparent'}`} title="Fill">🪣</button>
+                    {/* Left/Top Group: Tools */}
+                    <div className="flex flex-row md:flex-col gap-2 shrink-0">
+                        <button onClick={() => setTool('pen')} className={`p-2 rounded-lg border-2 ${tool === 'pen' ? 'border-black bg-yellow-100' : 'border-transparent hover:bg-gray-100'}`} title="Pen">✏️</button>
+                        <button onClick={() => setTool('eraser')} className={`p-2 rounded-lg border-2 ${tool === 'eraser' ? 'border-black bg-yellow-100' : 'border-transparent hover:bg-gray-100'}`} title="Eraser">🧹</button>
+                        <button onClick={() => setTool('fill')} className={`p-2 rounded-lg border-2 ${tool === 'fill' ? 'border-black bg-yellow-100' : 'border-transparent hover:bg-gray-100'}`} title="Fill">🪣</button>
                     </div>
 
-                    <div className="w-px h-6 bg-gray-300 mx-1 md:w-full md:h-px md:mx-0 md:my-1" />
+                    <div className="w-px h-8 bg-gray-200 md:w-full md:h-px md:mx-0 md:my-1 shrink-0" />
 
-                    {/* Undo/Redo */}
-                    <div className="flex flex-row md:flex-col gap-1">
-                        <button
-                            onClick={undo}
-                            disabled={!canUndo}
-                            className={`p-2 rounded-full md:rounded-none border-2 ${canUndo ? 'hover:bg-gray-100 border-transparent' : 'opacity-30 cursor-not-allowed border-transparent'}`}
-                            title="Undo"
-                        >↩️</button>
-                        <button
-                            onClick={redo}
-                            disabled={!canRedo}
-                            className={`p-2 rounded-full md:rounded-none border-2 ${canRedo ? 'hover:bg-gray-100 border-transparent' : 'opacity-30 cursor-not-allowed border-transparent'}`}
-                            title="Redo"
-                        >↪️</button>
+                    {/* Mobile: Expandable Color & Size Pickers */}
+                    <div className="flex md:hidden flex-row gap-4 items-center flex-1 justify-center relative">
+                        {/* Interactive Color Indicator */}
+                        <div className="relative">
+                            <button
+                                onClick={() => {
+                                    setShowColorPicker(!showColorPicker);
+                                    setShowSizePicker(false);
+                                }}
+                                className="w-10 h-10 rounded-full border-2 border-black shadow-sm transition-transform active:scale-95"
+                                style={{ backgroundColor: color }}
+                                aria-label="Current Color"
+                            />
+                            {/* Mobile Popover: Colors */}
+                            {showColorPicker && (
+                                <div className="absolute bottom-14 left-1/2 -translate-x-1/2 p-3 bg-white border-2 border-black rounded-xl shadow-xl grid grid-cols-4 gap-2 w-48 mb-2 z-30 animate-in fade-in slide-in-from-bottom-2">
+                                    {Object.values(COLORS.palette).map((c) => (
+                                        <button
+                                            key={c}
+                                            onClick={() => {
+                                                setColor(c);
+                                                setShowColorPicker(false);
+                                            }}
+                                            className={`w-8 h-8 rounded-full border-2 ${color === c ? 'border-black scale-110' : 'border-gray-200'}`}
+                                            style={{ backgroundColor: c }}
+                                        />
+                                    ))}
+                                    {/* Arrow */}
+                                    <div className="absolute -bottom-2 left-1/2 -translate-x-1/2 w-4 h-4 bg-white border-b-2 border-r-2 border-black rotate-45 transform" />
+                                </div>
+                            )}
+                        </div>
+
+                        {/* Interactive Size Indicator */}
+                        <div className="relative">
+                            <button
+                                onClick={() => {
+                                    setShowSizePicker(!showSizePicker);
+                                    setShowColorPicker(false);
+                                }}
+                                className="w-10 h-10 rounded-full border-2 border-gray-200 bg-white flex items-center justify-center shadow-sm active:scale-95 hover:bg-gray-50"
+                                aria-label="Brush Size"
+                            >
+                                <div className="bg-black rounded-full" style={{ width: thickness * 1.5, height: thickness * 1.5 }} />
+                            </button>
+                            {/* Mobile Popover: Size */}
+                            {showSizePicker && (
+                                <div className="absolute bottom-14 left-1/2 -translate-x-1/2 p-3 bg-white border-2 border-black rounded-xl shadow-xl flex flex-row gap-3 z-30 animate-in fade-in slide-in-from-bottom-2">
+                                    {[2, 5, 10].map(size => (
+                                        <button
+                                            key={size}
+                                            onClick={() => {
+                                                setThickness(size);
+                                                setShowSizePicker(false);
+                                            }}
+                                            className={`w-10 h-10 flex items-center justify-center border-2 rounded-full ${thickness === size ? 'border-black bg-gray-100' : 'border-gray-200'}`}
+                                        >
+                                            <div className="bg-black rounded-full" style={{ width: size * 2, height: size * 2 }} />
+                                        </button>
+                                    ))}
+                                    {/* Arrow */}
+                                    <div className="absolute -bottom-2 left-1/2 -translate-x-1/2 w-4 h-4 bg-white border-b-2 border-r-2 border-black rotate-45 transform" />
+                                </div>
+                            )}
+                        </div>
                     </div>
 
-                    <div className="w-px h-6 bg-gray-300 mx-1 md:w-full md:h-px md:mx-0 md:my-1" />
+                    {/* Desktop: Clear Button (Hidden on mobile to save space? No, user needs it. Keep it on right) */}
+                    {/* Actually, let's put Clear on the far right on mobile */}
 
-                    <button onClick={clearCanvas} className="p-2 border-2 border-red-200 hover:bg-red-100 rounded-full md:rounded-none text-red-500" title="Clear">🗑️</button>
-
-                    <div className="w-px h-6 bg-gray-300 mx-1 md:w-full md:h-px md:mx-0 md:my-2" />
-
-                    {/* Colors */}
-                    <div className="flex flex-row md:grid md:grid-cols-2 gap-1">
+                    {/* Desktop: Full Palette (Hidden on Mobile) */}
+                    <div className="hidden md:grid md:grid-cols-3 md:gap-2 shrink-0">
                         {Object.values(COLORS.palette).map((c) => (
                             <button
                                 key={c}
                                 onClick={() => setColor(c)}
-                                className={`w-8 h-8 rounded-full border-2 ${color === c ? 'border-black scale-110' : 'border-transparent'}`}
+                                className={`w-7 h-7 rounded-full border-2 transition-transform ${color === c ? 'border-black scale-110' : 'border-gray-200 hover:scale-105'}`}
                                 style={{ backgroundColor: c }}
+                                title={c}
                             />
                         ))}
                     </div>
 
-                    <div className="w-px h-6 bg-gray-300 mx-1 md:w-full md:h-px md:mx-0 md:my-2" />
+                    <div className="hidden md:block w-px h-px md:w-full md:h-px md:mx-0 md:my-1 bg-gray-200 shrink-0" />
 
-                    {/* Thickness */}
-                    <div className="flex flex-row md:flex-col gap-2 items-center">
+                    {/* Desktop: Thickness (Hidden on Mobile) */}
+                    <div className="hidden md:flex md:flex-col md:gap-3 md:items-center md:justify-center shrink-0">
                         {[2, 5, 10].map(size => (
                             <button
                                 key={size}
                                 onClick={() => setThickness(size)}
-                                className={`w-8 h-8 flex items-center justify-center border-2 rounded-full ${thickness === size ? 'border-black bg-gray-100' : 'border-transparent'}`}
+                                className={`w-8 h-8 flex items-center justify-center border-2 rounded-full ${thickness === size ? 'border-black bg-gray-100' : 'border-transparent hover:bg-gray-50'}`}
+                                title={`Size ${size}`}
                             >
                                 <div className="bg-black rounded-full" style={{ width: size * 2, height: size * 2 }} />
                             </button>
                         ))}
                     </div>
+
+                    <div className="w-px h-8 bg-gray-200 md:w-full md:h-px md:mx-0 md:my-1 shrink-0" />
+
+                    <button onClick={clearCanvas} className="p-2 border-2 border-red-200 hover:bg-red-100 rounded-lg text-red-500 shrink-0" title="Clear Canvas">🗑️</button>
                 </div>
             )}
 
@@ -352,6 +414,31 @@ function Canvas(props: CanvasProps) {
                     className="touch-none block w-full h-full object-contain mx-auto"
                     style={{ touchAction: 'none' }}
                 />
+
+                {/* Undo/Redo - Floating on canvas (top-left for drawer) */}
+                {isDrawer && (
+                    <div className="absolute top-2 left-2 flex gap-1 z-10">
+                        <button
+                            onClick={undo}
+                            disabled={!canUndo}
+                            className={`w-8 h-8 flex items-center justify-center rounded-full bg-white/90 border-2 shadow-sm backdrop-blur-sm transition-all ${canUndo ? 'border-gray-300 hover:bg-gray-100 hover:border-gray-400' : 'border-gray-200 opacity-40 cursor-not-allowed'
+                                }`}
+                            title="Undo"
+                        >
+                            ↩️
+                        </button>
+                        <button
+                            onClick={redo}
+                            disabled={!canRedo}
+                            className={`w-8 h-8 flex items-center justify-center rounded-full bg-white/90 border-2 shadow-sm backdrop-blur-sm transition-all ${canRedo ? 'border-gray-300 hover:bg-gray-100 hover:border-gray-400' : 'border-gray-200 opacity-40 cursor-not-allowed'
+                                }`}
+                            title="Redo"
+                        >
+                            ↪️
+                        </button>
+                    </div>
+                )}
+
                 {!isDrawer && <div className="absolute top-2 right-2 bg-black/50 text-white px-3 py-1 rounded-full pointer-events-none text-xs font-bold backdrop-blur-sm animate-pulse">
                     Watching {artistName ? `${artistName}` : 'Artist'} 🎨
                 </div>}
