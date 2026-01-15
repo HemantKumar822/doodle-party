@@ -85,10 +85,10 @@ function ChatPanel({
                 {!isDrawer ? (
                     <form
                         onSubmit={onSubmitGuess}
-                        className="p-3 flex gap-2 items-center pointer-events-auto bg-gradient-to-t from-white via-white/80 to-transparent"
+                        className="p-2 flex gap-2 items-center pointer-events-auto bg-gradient-to-t from-white via-white/80 to-transparent"
                     >
                         <input
-                            className="flex-1 border-2 border-black rounded px-3 py-2 font-inherit focus:ring-4 focus:ring-yellow-200/50 outline-none bg-white text-base shadow-[2px_2px_0px_rgba(0,0,0,0.1)] transition-all"
+                            className="flex-1 border-2 border-black rounded px-3 py-2 font-inherit focus:ring-2 focus:ring-yellow-200/50 outline-none bg-white text-sm shadow-[2px_2px_0px_rgba(0,0,0,0.1)] transition-all"
                             placeholder="Type a guess..."
                             value={guess}
                             onChange={e => onGuessChange(e.target.value)}
@@ -97,7 +97,7 @@ function ChatPanel({
                         />
                         <button
                             type="submit"
-                            className="doodle-button py-1 px-2.5 text-xs font-bold flex items-center justify-center shadow-[1px_1px_0px_rgba(0,0,0,1)] active:translate-y-[1px] active:shadow-none transition-all border-2 border-black bg-yellow-300 rounded"
+                            className="py-2 px-5 text-sm font-bold shadow-[2px_2px_0px_rgba(0,0,0,1)] active:translate-y-[1px] active:shadow-none transition-all border-2 border-black bg-yellow-300 rounded"
                             aria-label="Send"
                         >
                             Send
@@ -148,10 +148,10 @@ function ChatPanel({
                 {!isDrawer ? (
                     <form
                         onSubmit={onSubmitGuess}
-                        className="p-3 border-t-2 border-dashed border-gray-300 bg-white/50 backdrop-blur-sm flex gap-3 shrink-0 items-center justify-center transition-all"
+                        className="p-3 border-t-2 border-dashed border-gray-300 bg-white/50 backdrop-blur-sm flex gap-2 shrink-0 items-center transition-all"
                     >
                         <input
-                            className="flex-1 max-w-[200px] border-2 border-black rounded px-3 py-2 font-inherit focus:ring-4 focus:ring-yellow-200/50 outline-none bg-white shadow-sm transition-all"
+                            className="flex-1 border-2 border-black rounded px-3 py-2 font-inherit focus:ring-4 focus:ring-yellow-200/50 outline-none bg-white shadow-sm transition-all"
                             placeholder="Type a guess..."
                             value={guess}
                             onChange={e => onGuessChange(e.target.value)}
@@ -160,7 +160,7 @@ function ChatPanel({
                         />
                         <button
                             type="submit"
-                            className="doodle-button py-1 px-2.5 text-xs font-bold flex items-center justify-center shadow-[1px_1px_0px_rgba(0,0,0,1)] active:translate-y-[1px] active:shadow-none transition-all border-2 border-black bg-yellow-300 rounded"
+                            className="py-2 px-5 text-sm font-bold shadow-[2px_2px_0px_rgba(0,0,0,1)] active:translate-y-[1px] active:shadow-none transition-all border-2 border-black bg-yellow-300 rounded shrink-0"
                         >
                             Send
                         </button>

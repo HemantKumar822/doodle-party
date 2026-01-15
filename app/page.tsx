@@ -4,12 +4,12 @@ import { useState, useCallback, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { supabase } from '@/lib/supabase';
 import { COLORS } from './design_system';
-import { validateDisplayName } from './lib/gameUtils';
-import { DEFAULT_SETTINGS } from './types/game';
-import { useAudio } from './contexts/AudioContext';
-import GlobalControls from './components/GlobalControls';
-import AvatarSelector, { AvatarConfig, defaultAvatarConfig } from './components/AvatarSelector';
-import logger from './lib/logger';
+import { validateDisplayName } from './_lib/gameUtils';
+import { DEFAULT_SETTINGS } from './_types/game';
+import { useAudio } from './_contexts/AudioContext';
+import GlobalControls from './_components/GlobalControls';
+import AvatarSelector, { AvatarConfig, defaultAvatarConfig } from './_components/AvatarSelector';
+import logger from './_lib/logger';
 
 // localStorage keys
 const STORAGE_KEY_NAME = 'doodleparty_name';

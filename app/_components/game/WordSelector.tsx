@@ -1,8 +1,8 @@
 'use client';
 
 import React from 'react';
-import { WordChoice, DIFFICULTY_CONFIG } from '@/app/lib/wordSelector';
-import { WordDifficulty } from '@/app/data/words';
+import { WordChoice, DIFFICULTY_CONFIG } from '@/app/_lib/wordSelector';
+import { WordDifficulty } from '@/app/_data/words';
 
 interface WordSelectorProps {
     words: WordChoice[];

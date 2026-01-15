@@ -1,6 +1,6 @@
 import React, { useMemo } from 'react';
-import { Player } from '@/app/types/game';
-import { generateAvatarSvg, defaultAvatarConfig } from '@/app/components/AvatarSelector';
+import { Player } from '@/app/_types/game';
+import { generateAvatarSvg, defaultAvatarConfig } from '@/app/_components/AvatarSelector';
 
 interface PlayerListProps {
     players: Player[];

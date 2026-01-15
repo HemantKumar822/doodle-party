@@ -1,8 +1,8 @@
 import { useEffect, useState } from 'react';
 import { supabase } from '@/lib/supabase';
-import { GameState, Player, Room } from '@/app/types/game';
+import { GameState, Player, Room } from '@/app/_types/game';
 import { RealtimeChannel } from '@supabase/supabase-js';
-import logger from '@/app/lib/logger';
+import logger from '@/app/_lib/logger';
 
 export function useGameState(roomId: string, currentPlayerId: string | null = null, initialRoom?: Room, initialPlayers?: Player[]) {
     const [room, setRoom] = useState<Room | null>(initialRoom || null);

@@ -3,9 +3,10 @@
 import React from 'react';
 
 interface ButtonProps extends React.ButtonHTMLAttributes<HTMLButtonElement> {
-    variant?: 'primary' | 'secondary' | 'danger' | 'ghost';
-    size?: 'sm' | 'md' | 'lg';
+    variant?: 'primary' | 'secondary' | 'danger' | 'success' | 'ghost';
+    size?: 'sm' | 'md' | 'lg' | 'xl';
     fullWidth?: boolean;
+    animate?: boolean;
     children: React.ReactNode;
 }
 
@@ -17,6 +18,7 @@ export default function Button({
     variant = 'primary',
     size = 'md',
     fullWidth = false,
+    animate = false,
     className = '',
     children,
     disabled,
@@ -35,6 +37,7 @@ export default function Button({
         primary: 'bg-yellow-300 hover:bg-yellow-400 text-black',
         secondary: 'bg-white hover:bg-gray-100 text-black',
         danger: 'bg-red-500 hover:bg-red-600 text-black',
+        success: 'bg-green-400 hover:bg-green-500 text-black',
         ghost: 'bg-transparent hover:bg-gray-100 text-black border-transparent shadow-none active:shadow-none',
     };
 
@@ -42,13 +45,15 @@ export default function Button({
         sm: 'text-sm py-1.5 px-3',
         md: 'text-base py-2 px-4',
         lg: 'text-lg py-3 px-6',
+        xl: 'text-2xl py-4 px-12',
     };
 
     const widthStyles = fullWidth ? 'w-full' : '';
+    const animateStyles = animate && !disabled ? 'animate-wobble' : '';
 
     return (
         <button
-            className={`${baseStyles} ${variantStyles[variant]} ${sizeStyles[size]} ${widthStyles} ${className}`}
+            className={`${baseStyles} ${variantStyles[variant]} ${sizeStyles[size]} ${widthStyles} ${animateStyles} ${className}`}
             disabled={disabled}
             {...props}
         >

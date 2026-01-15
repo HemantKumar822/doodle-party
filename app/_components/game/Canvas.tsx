@@ -1,8 +1,8 @@
 import React, { useEffect, useRef, useState, useCallback } from 'react';
 import { supabase } from '@/lib/supabase';
 import { COLORS } from '@/app/design_system';
-import { getCanvasPoint, drawStroke, floodFill } from '@/app/lib/gameLogic';
-import { StrokePoint } from '@/app/types/game';
+import { getCanvasPoint, drawStroke, floodFill } from '@/app/_lib/gameLogic';
+import { StrokePoint } from '@/app/_types/game';
 
 interface CanvasProps {
     roomId: string;
@@ -41,6 +41,31 @@ function Canvas(props: CanvasProps) {
     const BROADCAST_INTERVAL = 16; // 60fps target
     const canvasRect = useRef<DOMRect | null>(null); // Cache for performance
 
+    // Save current canvas state to history
+    const saveToHistory = useCallback(() => {
+        if (!canvasRef.current) return;
+        const ctx = canvasRef.current.getContext('2d');
+        if (!ctx) return;
+
+        const imageData = ctx.getImageData(0, 0, width, height);
+
+        // Remove any "future" states if we're not at the end
+        historyRef.current = historyRef.current.slice(0, historyIndexRef.current + 1);
+
+        // Add new state
+        historyRef.current.push(imageData);
+
+        // Limit history size
+        if (historyRef.current.length > MAX_HISTORY) {
+            historyRef.current.shift();
+        } else {
+            historyIndexRef.current++;
+        }
+
+        setCanUndo(historyIndexRef.current > 0);
+        setCanRedo(false);
+    }, [width, height]);
+
     useEffect(() => {
         if (!canvasRef.current) return;
         const canvas = canvasRef.current;
@@ -50,6 +75,10 @@ function Canvas(props: CanvasProps) {
         if (ctx) {
             ctx.fillStyle = COLORS.paper;
             ctx.fillRect(0, 0, canvas.width, canvas.height);
+            // Save initial blank state for Undo
+            if (historyRef.current.length === 0) {
+                saveToHistory();
+            }
         }
 
         // Setup Realtime Subscription
@@ -66,6 +95,7 @@ function Canvas(props: CanvasProps) {
                         ctx.clearRect(0, 0, canvas.width, canvas.height);
                         ctx.fillStyle = COLORS.paper;
                         ctx.fillRect(0, 0, canvas.width, canvas.height);
+                        // Clear history for viewers too if needed, but usually handled by turn logic
                     } else {
                         // Reconstruct stroke
                         drawStroke(
@@ -84,7 +114,7 @@ function Canvas(props: CanvasProps) {
         return () => {
             supabase.removeChannel(channel);
         };
-    }, [roomId, isDrawer]);
+    }, [roomId, isDrawer, saveToHistory]);
 
     // FIX #5: Clear canvas AND history when turn changes (detected by word_selected_at change)
     const lastWordSelectedAt = useRef<string | null>(null);
@@ -102,6 +132,9 @@ function Canvas(props: CanvasProps) {
             historyIndexRef.current = -1;
             setCanUndo(false);
             setCanRedo(false);
+
+            // Save blank state
+            saveToHistory();
         }
         lastWordSelectedAt.current = props.wordSelectedAt || null;
     }, [props.wordSelectedAt]);
@@ -207,30 +240,7 @@ function Canvas(props: CanvasProps) {
         saveToHistory();
     };
 
-    // Save current canvas state to history
-    const saveToHistory = useCallback(() => {
-        if (!canvasRef.current) return;
-        const ctx = canvasRef.current.getContext('2d');
-        if (!ctx) return;
 
-        const imageData = ctx.getImageData(0, 0, width, height);
-
-        // Remove any "future" states if we're not at the end
-        historyRef.current = historyRef.current.slice(0, historyIndexRef.current + 1);
-
-        // Add new state
-        historyRef.current.push(imageData);
-
-        // Limit history size
-        if (historyRef.current.length > MAX_HISTORY) {
-            historyRef.current.shift();
-        } else {
-            historyIndexRef.current++;
-        }
-
-        setCanUndo(historyIndexRef.current > 0);
-        setCanRedo(false);
-    }, [width, height]);
 
     const undo = useCallback(() => {
         if (!canvasRef.current || historyIndexRef.current <= 0) return;
@@ -291,60 +301,58 @@ function Canvas(props: CanvasProps) {
 
     return (
         <div className="relative w-full h-full flex flex-col md:flex-row gap-2">
-            {/* Toolbar - Floating Pill on MOBILE, Compact Sidebar on DESKTOP */}
-            {/* Toolbar - Floating Pill on MOBILE & DESKTOP (Unified) */}
-            {isDrawer && (
-                <div className="hidden md:flex flex-col gap-2 absolute left-3 top-1/2 -translate-y-1/2 bg-white/95 backdrop-blur-md py-4 px-3 rounded-2xl border border-black/10 shadow-xl z-20 animate-in slide-in-from-left-4 fade-in duration-300">
-
-                    <div className="text-xs font-bold text-center mb-1">Tools</div>
-
-                    {/* Desktop: Tools Group */}
-                    <div className="flex flex-col gap-1 shrink-0">
-                        <button onClick={() => setTool('pen')} className={`p-2 rounded-xl transition-all ${tool === 'pen' ? 'bg-black text-white scale-105 shadow-md' : 'text-gray-500 hover:bg-gray-100'}`} title="Pen">✏️</button>
-                        <button onClick={() => setTool('eraser')} className={`p-2 rounded-xl transition-all ${tool === 'eraser' ? 'bg-black text-white scale-105 shadow-md' : 'text-gray-500 hover:bg-gray-100'}`} title="Eraser">🧹</button>
-                        <button onClick={() => setTool('fill')} className={`p-2 rounded-lg transition-all ${tool === 'fill' ? 'bg-black text-white scale-105 shadow-md' : 'text-gray-500 hover:bg-gray-100'}`} title="Fill">🪣</button>
-                    </div>
-
-                    <div className="w-full h-px mx-0 my-1 bg-gray-200 shrink-0" />
-
-                    {/* Desktop: Full Palette */}
-                    <div className="grid grid-cols-2 gap-1.5 shrink-0">
-                        {Object.values(COLORS.palette).map((c) => (
-                            <button
-                                key={c}
-                                onClick={() => setColor(c)}
-                                className={`w-6 h-6 rounded-full border transition-transform ${color === c ? 'border-black scale-125 shadow-sm ring-1 ring-white' : 'border-gray-200 hover:scale-110'}`}
-                                style={{ backgroundColor: c }}
-                                title={c}
-                            />
-                        ))}
-                    </div>
-
-                    <div className="w-full h-px mx-0 my-1 bg-gray-200 shrink-0" />
-
-                    {/* Desktop: Thickness */}
-                    <div className="flex flex-col gap-2 items-center justify-center shrink-0">
-                        {[2, 5, 10, 20].map(size => (
-                            <button
-                                key={size}
-                                onClick={() => setThickness(size)}
-                                className={`w-8 h-8 flex items-center justify-center rounded-full border transition-all ${thickness === size ? 'border-black bg-gray-50' : 'border-transparent hover:bg-gray-50'}`}
-                                title={`Size ${size}`}
-                            >
-                                <div className="bg-black rounded-full" style={{ width: Math.min(24, size * 1.5), height: Math.min(24, size * 1.5) }} />
-                            </button>
-                        ))}
-                    </div>
-
-                    <div className="w-full h-px mx-0 my-1 bg-gray-200 shrink-0" />
-
-                    <button onClick={clearCanvas} className="p-2.5 border-2 border-red-200 hover:bg-red-50 hover:border-red-300 rounded-xl text-red-500 shrink-0 transition-all" title="Clear Canvas">🗑️</button>
-                </div>
-            )}
-
             {/* Canvas Area - 4:3 Aspect Ratio Container */}
             <div className="relative flex-1 w-full flex items-center justify-center overflow-hidden">
                 <div className="relative w-full max-h-full aspect-square md:aspect-[4/3] sketchy-border bg-white overflow-hidden cursor-crosshair touch-none">
+                    {/* Desktop Tools - Inside Canvas (Absolute) */}
+                    {isDrawer && (
+                        <div className="hidden md:flex flex-col gap-2 absolute left-2 top-2 bottom-2 bg-white/95 backdrop-blur-md py-3 px-2 rounded-xl border border-black/10 shadow-lg z-20">
+                            <div className="text-xs font-bold text-center mb-1">Tools</div>
+
+                            {/* Tools Group */}
+                            <div className="flex flex-col gap-1 shrink-0">
+                                <button onClick={() => setTool('pen')} className={`p-2 rounded-xl transition-all ${tool === 'pen' ? 'bg-black text-white scale-105 shadow-md' : 'text-gray-500 hover:bg-gray-100'}`} title="Pen">✏️</button>
+                                <button onClick={() => setTool('eraser')} className={`p-2 rounded-xl transition-all ${tool === 'eraser' ? 'bg-black text-white scale-105 shadow-md' : 'text-gray-500 hover:bg-gray-100'}`} title="Eraser">🧹</button>
+                                <button onClick={() => setTool('fill')} className={`p-2 rounded-lg transition-all ${tool === 'fill' ? 'bg-black text-white scale-105 shadow-md' : 'text-gray-500 hover:bg-gray-100'}`} title="Fill">🪣</button>
+                            </div>
+
+                            <div className="w-full h-px mx-0 my-1 bg-gray-200 shrink-0" />
+
+                            {/* Colors */}
+                            <div className="grid grid-cols-2 gap-1 shrink-0 overflow-y-auto flex-1">
+                                {Object.values(COLORS.palette).map((c) => (
+                                    <button
+                                        key={c}
+                                        onClick={() => setColor(c)}
+                                        className={`w-5 h-5 rounded-full border transition-transform ${color === c ? 'border-black scale-125 shadow-sm ring-1 ring-white' : 'border-gray-200 hover:scale-110'}`}
+                                        style={{ backgroundColor: c }}
+                                        title={c}
+                                    />
+                                ))}
+                            </div>
+
+                            <div className="w-full h-px mx-0 my-1 bg-gray-200 shrink-0" />
+
+                            {/* Thickness */}
+                            <div className="flex flex-col gap-1 items-center shrink-0">
+                                {[2, 5, 10].map(size => (
+                                    <button
+                                        key={size}
+                                        onClick={() => setThickness(size)}
+                                        className={`w-6 h-6 flex items-center justify-center rounded-full border transition-all ${thickness === size ? 'border-black bg-gray-50' : 'border-transparent hover:bg-gray-50'}`}
+                                        title={`Size ${size}`}
+                                    >
+                                        <div className="bg-black rounded-full" style={{ width: Math.min(18, size * 1.2), height: Math.min(18, size * 1.2) }} />
+                                    </button>
+                                ))}
+                            </div>
+
+                            <div className="w-full h-px mx-0 my-1 bg-gray-200 shrink-0" />
+
+                            <button onClick={clearCanvas} className="p-2 border-2 border-red-200 hover:bg-red-50 hover:border-red-300 rounded-lg text-red-500 shrink-0 transition-all text-sm" title="Clear Canvas">🗑️</button>
+                        </div>
+                    )}
+
                     <canvas
                         ref={canvasRef}
                         width={width}

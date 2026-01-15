@@ -1,11 +1,12 @@
-import { Player, Room } from '@/app/types/game';
+import { Player, Room } from '@/app/_types/game';
 import { COLORS } from '@/app/design_system';
 import { supabase } from '@/lib/supabase';
 import { useState } from 'react';
 import SettingsPanel from './SettingsPanel';
-import GlobalControls from '@/app/components/GlobalControls';
-import logger from '@/app/lib/logger';
-import { generateAvatarSvg } from '@/app/components/AvatarSelector';
+import GlobalControls from '@/app/_components/GlobalControls';
+import Button from '@/app/_components/ui/Button';
+import logger from '@/app/_lib/logger';
+import { generateAvatarSvg } from '@/app/_components/AvatarSelector';
 
 interface LobbyViewProps {
     room: Room;
@@ -165,13 +166,14 @@ export default function LobbyView({ room, players: rawPlayers, currentPlayerId }
                 {/* Actions */}
                 <div className="text-center">
                     {isHost ? (
-                        <button
+                        <Button
                             onClick={startGame}
                             disabled={starting || players.length < 2}
-                            className={`doodle-button text-2xl px-12 py-4 ${players.length < 2 ? 'opacity-50 cursor-not-allowed' : 'animate-wobble'}`}
+                            size="xl"
+                            animate={players.length >= 2}
                         >
                             {players.length < 2 ? 'Need 2+ Players' : 'Start Game! 🚀'}
-                        </button>
+                        </Button>
                     ) : (
                         <div className="text-xl animate-pulse">Waiting for host to start...</div>
                     )}

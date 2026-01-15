@@ -2,13 +2,13 @@
 
 import { useEffect, useState, useRef } from 'react';
 import { useRouter } from 'next/navigation';
-import { useGameState } from '@/app/hooks/useGameState';
+import { useGameState } from '@/app/_hooks/useGameState';
 import JoinScreen from './JoinScreen';
 import LobbyView from './LobbyView';
 import { useParams } from 'next/navigation';
 import GameView from './GameView';
-import ErrorBoundary from '@/app/components/ErrorBoundary';
-import logger from '@/app/lib/logger';
+import ErrorBoundary from '@/app/_components/ErrorBoundary';
+import logger from '@/app/_lib/logger';
 
 export default function RoomPage() {
     const params = useParams();

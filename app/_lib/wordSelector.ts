@@ -5,7 +5,7 @@
  * Provides one word from each difficulty level per turn
  */
 
-import { WORDS_EASY, WORDS_MEDIUM, WORDS_HARD, WordDifficulty } from '@/app/data/words';
+import { WORDS_EASY, WORDS_MEDIUM, WORDS_HARD, WordDifficulty } from '@/app/_data/words';
 
 export interface WordChoice {
     word: string;

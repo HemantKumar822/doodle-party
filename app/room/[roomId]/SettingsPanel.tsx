@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 import { supabase } from '@/lib/supabase';
-import { Room, RoomSettings, DEFAULT_SETTINGS, GameMode } from '@/app/types/game';
+import { Room, RoomSettings, DEFAULT_SETTINGS, GameMode } from '@/app/_types/game';
 
 interface SettingsPanelProps {
     room: Room;

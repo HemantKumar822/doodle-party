@@ -16,7 +16,8 @@ interface AudioContextType {
     setMuted: (muted: boolean) => void;
     setSfxMuted: (muted: boolean) => void;
     setVolume: (vol: number) => void;
-    playSound: (type: 'correct' | 'wrong' | 'turnEnd' | 'yourTurn' | 'tick' | 'click') => void;
+    toggleSfx: () => void;
+    playSound: (type: 'correct' | 'wrong' | 'turnEnd' | 'yourTurn' | 'tick' | 'tickFast' | 'click' | 'pop') => void;
 }
 
 const AudioContext = createContext<AudioContextType | null>(null);
@@ -219,12 +220,16 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
         setIsSfxMuted(muted);
     }, []);
 
+    const toggleSfx = useCallback(() => {
+        setIsSfxMuted(prev => !prev);
+    }, []);
+
     const setVolume = useCallback((vol: number) => {
         setVolumeState(vol);
     }, []);
 
     // Sound effects player
-    const playSound = useCallback((type: 'correct' | 'wrong' | 'turnEnd' | 'yourTurn' | 'tick' | 'click') => {
+    const playSound = useCallback((type: 'correct' | 'wrong' | 'turnEnd' | 'yourTurn' | 'tick' | 'tickFast' | 'click' | 'pop') => {
         if (isSfxMuted || !audioContextRef.current) return;
 
         const ctx = audioContextRef.current;
@@ -240,7 +245,9 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
             turnEnd: { freq: 440, duration: 0.5, type: 'triangle' },
             yourTurn: { freq: 660, duration: 0.2, type: 'sine' },
             tick: { freq: 1000, duration: 0.05, type: 'square' },
+            tickFast: { freq: 1200, duration: 0.03, type: 'square' },
             click: { freq: 600, duration: 0.05, type: 'sine' },
+            pop: { freq: 520, duration: 0.08, type: 'sine' },
         };
 
         const sound = sounds[type] || sounds.click;
@@ -264,6 +271,7 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
             toggleMusic,
             setMuted,
             setSfxMuted,
+            toggleSfx,
             setVolume,
             playSound,
         }}>
@@ -284,4 +292,14 @@ export function useAudio() {
 export function useMusicPlayer() {
     const { isMusicPlaying, toggleMusic } = useAudio();
     return { isPlaying: isMusicPlaying, toggle: toggleMusic };
+}
+
+// Backwards compatibility hook (replaces old useSoundManager from deleted soundManager.ts)
+export function useSoundManager() {
+    const { isSfxMuted, toggleSfx, playSound } = useAudio();
+    return {
+        isMuted: isSfxMuted,
+        toggleMute: toggleSfx,
+        play: playSound,
+    };
 }

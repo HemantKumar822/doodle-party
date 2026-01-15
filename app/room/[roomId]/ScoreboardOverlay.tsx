@@ -1,5 +1,6 @@
-import { Player } from "@/app/types/game";
+import { Player } from "@/app/_types/game";
 import { COLORS } from "@/app/design_system";
+import Button from "@/app/_components/ui/Button";
 
 interface ScoreboardOverlayProps {
     players: Player[];
@@ -54,12 +55,13 @@ export default function ScoreboardOverlay({
                         </div>
 
                         {isHost ? (
-                            <button
+                            <Button
                                 onClick={onContinue}
-                                className="doodle-button text-xl px-8 py-3 animate-wobble"
+                                size="lg"
+                                animate
                             >
                                 Continue →
-                            </button>
+                            </Button>
                         ) : (
                             <div className="text-gray-500 animate-pulse">
                                 Waiting for host... ({timeLeft}s)

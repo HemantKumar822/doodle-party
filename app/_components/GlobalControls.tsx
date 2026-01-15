@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
-import { useAudio } from '@/app/contexts/AudioContext';
+import { useAudio } from '@/app/_contexts/AudioContext';
 import SettingsModal from './SettingsModal';
 
 interface GlobalControlsProps {

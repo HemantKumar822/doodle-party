@@ -1,4 +1,4 @@
-import { StrokePoint } from "@/app/types/game";
+import { StrokePoint } from "@/app/_types/game";
 
 export function getCanvasPoint(
     e: React.MouseEvent | React.TouchEvent,

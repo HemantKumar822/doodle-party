@@ -49,7 +49,8 @@ export default function FloatingGuessStream({ messages, className = '', currentU
             ref={containerRef}
             className={`flex flex-col justify-end overflow-hidden pointer-events-none ${className}`}
         >
-            <div className="flex flex-col gap-2 px-4 pb-2">
+            {/* Aesthetic Message Container */}
+            <div className="mx-2 mb-2 p-2 rounded-2xl bg-white/60 backdrop-blur-md border border-white/40 shadow-sm flex flex-col gap-1.5 mask-image-fade-top">
                 {displayMessages.map((msg, index) => {
                     const isMe = currentUserDisplayName && msg.name === currentUserDisplayName;
                     const isCorrect = msg.is_correct;
@@ -57,13 +58,13 @@ export default function FloatingGuessStream({ messages, className = '', currentU
                     return (
                         <div
                             key={msg.id || index}
-                            className="animate-in slide-in-from-bottom-2 fade-in duration-300 px-1"
+                            className={`animate-in slide-in-from-bottom-2 fade-in duration-300 flex items-baseline gap-1.5 px-1.5 py-0.5 rounded-lg ${isCorrect ? 'bg-green-100/50' : ''}`}
                         >
-                            <span className={`text-xs ${isCorrect ? 'text-green-600' : 'text-gray-500'}`}>
-                                {msg.name}:
+                            <span className={`text-[10px] font-bold uppercase tracking-wider ${isCorrect ? 'text-green-700' : 'text-gray-500'}`}>
+                                {msg.name}
                             </span>
-                            <span className={`ml-1 text-sm ${isCorrect ? 'text-green-700 font-bold' : 'text-gray-700'}`}>
-                                {isCorrect ? '🎉 Got it!' : msg.guess_text}
+                            <span className={`text-sm ${isCorrect ? 'text-green-700 font-bold' : 'text-gray-800'} break-words leading-tight`}>
+                                {isCorrect ? '🎉 Correct!' : msg.guess_text}
                             </span>
                         </div>
                     );

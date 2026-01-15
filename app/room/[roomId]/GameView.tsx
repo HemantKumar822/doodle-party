@@ -3,21 +3,33 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { supabase } from '@/lib/supabase';
-import { Room, Player, Guess, DEFAULT_SETTINGS, DiceBearAvatarConfig } from '@/app/types/game';
+import { Room, Player, Guess, DEFAULT_SETTINGS, DiceBearAvatarConfig } from '@/app/_types/game';
 import { COLORS } from '@/app/design_system';
-import { isFuzzyMatch, calculateGuessPoints, wordToUnderscores } from '@/app/lib/gameUtils';
-import { useSoundManager } from '@/app/lib/soundManager';
-import { getWordChoices, WordChoice, getDrawerBonus, getGuesserPoints, DIFFICULTY_CONFIG } from '@/app/lib/wordSelector';
-import { WordDifficulty } from '@/app/data/words';
-import Canvas from '@/app/components/game/Canvas';
-import GameHeader from '@/app/components/game/GameHeader';
-import WordSelector from '@/app/components/game/WordSelector';
-import ChatPanel from '@/app/components/game/ChatPanel';
-import FloatingGuessStream from '@/app/components/game/FloatingGuessStream';
+import { isFuzzyMatch, calculateGuessPoints, wordToUnderscores } from '@/app/_lib/gameUtils';
+import { useSoundManager } from '@/app/_contexts/AudioContext';
+import { getWordChoices, WordChoice, getDrawerBonus, getGuesserPoints, DIFFICULTY_CONFIG } from '@/app/_lib/wordSelector';
+import { WordDifficulty } from '@/app/_data/words';
+import Canvas from '@/app/_components/game/Canvas';
+import GameHeader from '@/app/_components/game/GameHeader';
+import WordSelector from '@/app/_components/game/WordSelector';
+import ChatPanel from '@/app/_components/game/ChatPanel';
+import FloatingGuessStream from '@/app/_components/game/FloatingGuessStream';
 import ScoreboardOverlay from './ScoreboardOverlay';
-import GlobalControls from '@/app/components/GlobalControls';
-import { generateAvatarSvg, defaultAvatarConfig } from '@/app/components/AvatarSelector';
-import logger from '@/app/lib/logger';
+import GlobalControls from '@/app/_components/GlobalControls';
+import { generateAvatarSvg, defaultAvatarConfig } from '@/app/_components/AvatarSelector';
+import logger from '@/app/_lib/logger';
+import {
+    GAME_MODE_CONFIG,
+    getEffectiveDrawTime,
+    getRelaySegmentTime,
+    applyModePointsMultiplier,
+    getWordSelectionTime,
+    shouldShowHints,
+    isRelayMode,
+    getRelayDrawerIndex,
+    getRelayDrawerId,
+    getRelayProgressText,
+} from '@/app/_lib/gameModes';
 
 interface GameViewProps {
     room: Room;
@@ -26,11 +38,15 @@ interface GameViewProps {
 }
 
 
+// Message type extends Guess with display name
+interface ChatMessage extends Guess {
+    name?: string;
+}
 
 export default function GameView({ room, players, currentPlayerId }: GameViewProps) {
     const router = useRouter();
     const [timeLeft, setTimeLeft] = useState(0);
-    const [messages, setMessages] = useState<any[]>([]);
+    const [messages, setMessages] = useState<ChatMessage[]>([]);
     const [guess, setGuess] = useState('');
     const [showWordModal, setShowWordModal] = useState(false);
     const [showScoreboard, setShowScoreboard] = useState(false);
@@ -45,19 +61,40 @@ export default function GameView({ room, players, currentPlayerId }: GameViewPro
     // Word Hints - revealed letter positions
     const [revealedLetters, setRevealedLetters] = useState<Set<number>>(new Set());
 
+    // Relay mode tracking
+    const [relaySegment, setRelaySegment] = useState(0);
+
     // Sound effects
     const { isMuted, toggleMute, play: playSound } = useSoundManager();
 
     const currentPlayer = players.find(p => p.id === currentPlayerId);
-    const currentDrawer = players.find(p => p.turn_order === room.current_drawer_index);
+    const baseDrawer = players.find(p => p.turn_order === room.current_drawer_index);
     // FIX: Do not fallback to players[0] purely based on index if not found.
-    // If turn_order matches, great. If not, wait or show empty state.
-    // Default to first player ONLY if we definitely have players and room index is 0,
-    // but better to be strict to avoid bugs.
-    const safestDrawer = currentDrawer || (players.length > 0 && room.current_drawer_index === 0 ? players[0] : null);
+    const safestBaseDrawer = baseDrawer || (players.length > 0 && room.current_drawer_index === 0 ? players[0] : null);
+
+    // Relay mode: Rotate drawer based on current relay segment
+    const gameMode = room.settings?.game_mode || 'classic';
+    const currentRelaySegment = isRelayMode(gameMode)
+        ? getRelayDrawerIndex(room.settings, room.word_selected_at, room.turn_ends_at)
+        : 0;
+
+    // Get the actual drawer (considering relay rotation)
+    const relayDrawerId = isRelayMode(gameMode) && safestBaseDrawer
+        ? getRelayDrawerId(players, room.current_drawer_index, currentRelaySegment)
+        : safestBaseDrawer?.id;
+    const safestDrawer = players.find(p => p.id === relayDrawerId) || safestBaseDrawer;
 
     const isDrawer = currentPlayer?.id === safestDrawer?.id;
     const isHost = currentPlayer?.is_host;
+
+    // Track relay segment changes
+    useEffect(() => {
+        if (isRelayMode(gameMode) && currentRelaySegment !== relaySegment) {
+            setRelaySegment(currentRelaySegment);
+            // Play sound when drawer changes in relay mode
+            playSound('yourTurn');
+        }
+    }, [currentRelaySegment, relaySegment, gameMode, playSound]);
 
     // Timer Logic with sound effects
     useEffect(() => {
@@ -85,7 +122,10 @@ export default function GameView({ room, players, currentPlayerId }: GameViewPro
         return () => clearInterval(interval);
     }, [room.turn_ends_at, playSound, room.settings?.draw_time]);
 
-    // Turn End Detection (Client Side UI) with sound
+    // Track if drawer points were awarded this turn (to prevent duplicates)
+    const drawerPointsAwardedRef = useRef<string | null>(null);
+
+    // Turn End Detection (Client Side UI) with sound + Award drawer points
     useEffect(() => {
         if (room.turn_ends_at) {
             const end = new Date(room.turn_ends_at).getTime();
@@ -93,13 +133,36 @@ export default function GameView({ room, players, currentPlayerId }: GameViewPro
             if (now > end || (room.current_word && timeLeft === 0 && end < now)) {
                 setShowScoreboard(true);
                 playSound('turnEnd');
+
+                // Award drawer points immediately when turn ends (only once per turn)
+                const turnKey = `${room.id}-${room.word_selected_at}`;
+                if (isHost && safestDrawer && room.word_selected_at && drawerPointsAwardedRef.current !== turnKey) {
+                    drawerPointsAwardedRef.current = turnKey;
+                    // Award drawer points async
+                    (async () => {
+                        const { count } = await supabase
+                            .from('guesses')
+                            .select('*', { count: 'exact', head: true })
+                            .eq('room_id', room.id)
+                            .eq('is_correct', true)
+                            .gt('guessed_at', room.word_selected_at);
+
+                        if (count && count > 0) {
+                            const drawerPoints = count * 50;
+                            await supabase.rpc('increment_player_score', {
+                                p_player_id: safestDrawer.id,
+                                p_points: drawerPoints
+                            });
+                        }
+                    })();
+                }
             } else {
                 setShowScoreboard(false);
             }
         } else {
             setShowScoreboard(false);
         }
-    }, [timeLeft, room.turn_ends_at, room.current_word, playSound]);
+    }, [timeLeft, room.turn_ends_at, room.current_word, playSound, isHost, safestDrawer, room.id, room.word_selected_at]);
 
     // Extracted "All Guessed" Check - can be called from polling OR after a correct guess
     const checkAndEndTurnIfAllGuessed = useCallback(async () => {
@@ -170,23 +233,8 @@ export default function GameView({ room, players, currentPlayerId }: GameViewPro
     }, [isHost, room.status, room.turn_ends_at, room.current_drawer_index, room.current_round, players, room.id, room.current_word, room.word_selected_at]);
 
     const nextTurn = async () => {
-        // FIX #10: Award drawer points (50 per correct guesser)
-        if (safestDrawer && room.word_selected_at) {
-            const { count } = await supabase
-                .from('guesses')
-                .select('*', { count: 'exact', head: true })
-                .eq('room_id', room.id)
-                .eq('is_correct', true)
-                .gt('guessed_at', room.word_selected_at);
-
-            if (count && count > 0) {
-                const drawerPoints = count * 50;
-                await supabase.rpc('increment_player_score', {
-                    p_player_id: safestDrawer.id,
-                    p_points: drawerPoints
-                });
-            }
-        }
+        // NOTE: Drawer points are now awarded at turn end (before scorecard shows)
+        // See drawerPointsAwardedRef effect above
 
         // FIX: Blind increment fails if players leave (gaps in turn_order).
         // Algorithm: Find next available player with turn_order > current.
@@ -239,8 +287,10 @@ export default function GameView({ room, players, currentPlayerId }: GameViewPro
             if (wordChoices.length === 0) {
                 const choices = getWordChoices(usedWords, 3);
                 setWordChoices(choices);
-                setWordSelectionTime(10);
-                setWordSelectionDeadline(Date.now() + 10000); // 10s from now
+                // Use mode-specific word selection time (5s for speed, 10s for others)
+                const selectionTime = getWordSelectionTime(gameMode);
+                setWordSelectionTime(selectionTime);
+                setWordSelectionDeadline(Date.now() + selectionTime * 1000);
             }
         } else {
             setShowWordModal(false);
@@ -320,8 +370,9 @@ export default function GameView({ room, players, currentPlayerId }: GameViewPro
         // Track used words to prevent repeats
         setUsedWords(prev => new Set(prev).add(word));
 
-        const drawTime = room.settings?.draw_time || DEFAULT_SETTINGS.draw_time;
-        const turnEndsAt = new Date(Date.now() + drawTime * 1000).toISOString();
+        // Use mode-specific draw time (50% for speed mode)
+        const effectiveDrawTime = getEffectiveDrawTime(room.settings);
+        const turnEndsAt = new Date(Date.now() + effectiveDrawTime * 1000).toISOString();
         await supabase.from('rooms').update({
             current_word: word,
             turn_ends_at: turnEndsAt,
@@ -329,7 +380,7 @@ export default function GameView({ room, players, currentPlayerId }: GameViewPro
         }).eq('id', room.id);
         setShowWordModal(false);
 
-        logger.info(`Word selected: "${word}" (${difficulty}) - Drawer bonus: +${getDrawerBonus(difficulty)} pts`, { context: 'game' });
+        logger.info(`[${GAME_MODE_CONFIG[gameMode].emoji} ${GAME_MODE_CONFIG[gameMode].name}] Word: "${word}" (${difficulty}) - Draw time: ${effectiveDrawTime}s`, { context: 'game' });
     };
 
     const sendGuess = async (e: React.FormEvent) => {
@@ -354,7 +405,9 @@ export default function GameView({ room, players, currentPlayerId }: GameViewPro
                 .gt('created_at', room.word_selected_at);
 
             const guessRank = (count || 0) + 1;
-            pointsToAward = calculateGuessPoints(secondsElapsed, guessRank);
+            const basePoints = calculateGuessPoints(secondsElapsed, guessRank);
+            // Apply mode-specific points multiplier (1.5x for Speed mode)
+            pointsToAward = applyModePointsMultiplier(basePoints, gameMode);
         }
 
         await supabase.from('guesses').insert({
@@ -512,6 +565,8 @@ export default function GameView({ room, players, currentPlayerId }: GameViewPro
                 hasGuessedCorrectly={hasGuessedCorrectly}
                 showScoreboard={showScoreboard}
                 revealedLetters={revealedLetters}
+                gameMode={gameMode}
+                relaySegment={currentRelaySegment}
             >
                 <GlobalControls
                     onLeaveRoom={async () => {
@@ -572,8 +627,8 @@ export default function GameView({ room, players, currentPlayerId }: GameViewPro
                 {/* Main: Canvas */}
                 {/* Main: Canvas */}
                 {/* Main: Canvas */}
-                <div className="flex-1 relative bg-paper overflow-hidden flex flex-col items-center justify-start pt-2 px-4 md:justify-center md:pt-0 md:px-0 md:sketchy-border md:bg-gray-100">
-                    <div className="w-full flex justify-center pt-2 md:pt-0"> {/* Wrapper to force top alignment */}
+                <div className="flex-1 relative bg-paper overflow-hidden flex flex-col items-center justify-start pt-2 px-0 md:justify-center md:pt-0 md:px-0 md:sketchy-border md:bg-gray-100">
+                    <div className="w-full flex justify-center pt-2 px-4 md:pt-0 md:px-0"> {/* Wrapper to force top alignment */}
                         <Canvas
                             roomId={room.id}
                             isDrawer={isDrawer}

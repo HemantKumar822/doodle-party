@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import { Permanent_Marker } from "next/font/google";
 import "./globals.css";
-import { AudioProvider } from "./contexts/AudioContext";
+import { AudioProvider } from "./_contexts/AudioContext";
 
 const permanentMarker = Permanent_Marker({
   weight: "400",
