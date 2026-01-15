@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { Permanent_Marker } from "next/font/google";
 import "./globals.css";
+import { AudioProvider } from "./contexts/AudioContext";
 
 const permanentMarker = Permanent_Marker({
   weight: "400",
@@ -36,7 +37,9 @@ export default function RootLayout({
           </defs>
         </svg>
 
-        {children}
+        <AudioProvider>
+          {children}
+        </AudioProvider>
       </body>
     </html>
   );

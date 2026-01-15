@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect, useRef, useCallback } from 'react';
+import { useRouter } from 'next/navigation';
 import { supabase } from '@/lib/supabase';
 import { Room, Player, Guess, DEFAULT_SETTINGS, DiceBearAvatarConfig } from '@/app/types/game';
 import { COLORS } from '@/app/design_system';
@@ -12,7 +13,9 @@ import Canvas from '@/app/components/game/Canvas';
 import GameHeader from '@/app/components/game/GameHeader';
 import WordSelector from '@/app/components/game/WordSelector';
 import ChatPanel from '@/app/components/game/ChatPanel';
+import FloatingGuessStream from '@/app/components/game/FloatingGuessStream';
 import ScoreboardOverlay from './ScoreboardOverlay';
+import GlobalControls from '@/app/components/GlobalControls';
 import { generateAvatarSvg, defaultAvatarConfig } from '@/app/components/AvatarSelector';
 import logger from '@/app/lib/logger';
 
@@ -25,6 +28,7 @@ interface GameViewProps {
 
 
 export default function GameView({ room, players, currentPlayerId }: GameViewProps) {
+    const router = useRouter();
     const [timeLeft, setTimeLeft] = useState(0);
     const [messages, setMessages] = useState<any[]>([]);
     const [guess, setGuess] = useState('');
@@ -508,12 +512,19 @@ export default function GameView({ room, players, currentPlayerId }: GameViewPro
                 hasGuessedCorrectly={hasGuessedCorrectly}
                 showScoreboard={showScoreboard}
                 revealedLetters={revealedLetters}
-                isMuted={isMuted}
-                onToggleMute={() => {
-                    toggleMute();
-                    playSound('click');
-                }}
-            />
+            >
+                <GlobalControls
+                    onLeaveRoom={async () => {
+                        await supabase.from('players').delete().eq('id', currentPlayerId);
+                        localStorage.removeItem(`player_id_${room.id}`);
+                        router.push('/');
+                    }}
+                    isHost={isHost}
+                    className="!gap-0" // Tighter gap for header integration
+                />
+            </GameHeader>
+
+
 
             <div className="flex flex-col md:flex-row gap-0 md:gap-4 flex-1 min-h-0 relative">
 
@@ -559,15 +570,31 @@ export default function GameView({ room, players, currentPlayerId }: GameViewPro
                 </div>
 
                 {/* Main: Canvas */}
-                <div className="flex-1 relative bg-gray-200 overflow-hidden flex items-center justify-center md:sketchy-border md:bg-gray-100">
-                    <Canvas
-                        roomId={room.id}
-                        isDrawer={isDrawer}
-                        width={800}
-                        height={600}
-                        wordSelectedAt={room.word_selected_at}
-                        artistName={safestDrawer?.display_name}
-                    />
+                {/* Main: Canvas */}
+                {/* Main: Canvas */}
+                <div className="flex-1 relative bg-paper overflow-hidden flex flex-col items-center justify-start pt-2 px-4 md:justify-center md:pt-0 md:px-0 md:sketchy-border md:bg-gray-100">
+                    <div className="w-full flex justify-center pt-2 md:pt-0"> {/* Wrapper to force top alignment */}
+                        <Canvas
+                            roomId={room.id}
+                            isDrawer={isDrawer}
+                            width={800}
+                            height={800}
+                            wordSelectedAt={room.word_selected_at}
+                            artistName={safestDrawer?.display_name}
+                            correctGuessCount={correctGuessers.size}
+                            totalGuessersCount={players.length - 1}
+                        />
+                    </div>
+
+                    {/* Mobile: Floating Guess Stream (Fills empty space) */}
+                    {/* Mobile: Floating Guess Stream (Fills empty space) */}
+                    <div className="flex-1 w-full relative min-h-0 md:hidden pointer-events-none z-10">
+                        <FloatingGuessStream
+                            messages={messages}
+                            currentUserDisplayName={currentPlayer?.display_name}
+                            className="absolute inset-0 pb-14"
+                        />
+                    </div>
 
                     {/* Word Selection Modal */}
                     {showWordModal && (

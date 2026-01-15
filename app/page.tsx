@@ -1,14 +1,19 @@
 'use client';
 
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { supabase } from '@/lib/supabase';
 import { COLORS } from './design_system';
 import { validateDisplayName } from './lib/gameUtils';
 import { DEFAULT_SETTINGS } from './types/game';
-import { useMusicPlayer } from './lib/musicPlayer';
+import { useAudio } from './contexts/AudioContext';
+import GlobalControls from './components/GlobalControls';
 import AvatarSelector, { AvatarConfig, defaultAvatarConfig } from './components/AvatarSelector';
 import logger from './lib/logger';
+
+// localStorage keys
+const STORAGE_KEY_NAME = 'doodleparty_name';
+const STORAGE_KEY_AVATAR = 'doodleparty_avatar';
 
 export default function Home() {
   const router = useRouter();
@@ -18,9 +23,38 @@ export default function Home() {
   const [joinCode, setJoinCode] = useState('');
   const [joinError, setJoinError] = useState<string | null>(null);
   const [joining, setJoining] = useState(false);
-  const { isPlaying, toggle: toggleMusic } = useMusicPlayer({ autoStart: true, volume: 0.3 });
+  const { isMusicPlaying, toggleMusic } = useAudio();
   const [avatar, setAvatar] = useState<AvatarConfig>(defaultAvatarConfig());
   const handleAvatarChange = useCallback((config: AvatarConfig) => setAvatar(config), []);
+
+  // Load saved preferences on mount
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+
+    const savedName = localStorage.getItem(STORAGE_KEY_NAME);
+    const savedAvatar = localStorage.getItem(STORAGE_KEY_AVATAR);
+
+    if (savedName) setName(savedName);
+    if (savedAvatar) {
+      try {
+        setAvatar(JSON.parse(savedAvatar));
+      } catch (e) { /* ignore parse errors */ }
+    }
+  }, []);
+
+  // Save name when it changes (debounced effect)
+  useEffect(() => {
+    if (name.trim()) {
+      localStorage.setItem(STORAGE_KEY_NAME, name);
+    }
+  }, [name]);
+
+  // Save avatar when it changes
+  useEffect(() => {
+    if (avatar?.style && avatar?.seed) {
+      localStorage.setItem(STORAGE_KEY_AVATAR, JSON.stringify(avatar));
+    }
+  }, [avatar]);
 
   const createRoom = async () => {
     // Validate name
@@ -99,14 +133,10 @@ export default function Home() {
 
   return (
     <main className="flex min-h-screen flex-col items-center justify-center p-4 relative overflow-hidden">
-      {/* Music Toggle Button */}
-      <button
-        onClick={toggleMusic}
-        className="absolute top-4 right-4 z-20 text-3xl p-2 hover:scale-110 transition-transform bg-white rounded-full shadow-lg border-2 border-black"
-        title={isPlaying ? 'Stop Music' : 'Play Music'}
-      >
-        {isPlaying ? '🎵' : '🔇'}
-      </button>
+      {/* Global Controls - Music Toggle + Settings */}
+      <div className="absolute top-4 right-4 z-20">
+        <GlobalControls />
+      </div>
 
       {/* Decorative Blob */}
       <div className="absolute top-10 left-10 w-40 h-40 bg-yellow-200 rounded-full mix-blend-multiply filter blur-xl opacity-70 animate-wobble"></div>

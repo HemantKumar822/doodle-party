@@ -48,6 +48,12 @@ const PlayerItem = React.memo(function PlayerItem({
                         loading="lazy"
                     />
                 </div>
+                {/* Online/Offline Indicator */}
+                <div
+                    className={`absolute -bottom-0.5 -right-0.5 w-3 h-3 rounded-full border-2 border-white shadow-sm ${player.is_connected ? 'bg-green-500' : 'bg-gray-400'
+                        }`}
+                    title={player.is_connected ? 'Online' : 'Offline'}
+                />
                 {player.is_host && (
                     <div
                         className="absolute -top-2 -right-2 text-xs bg-yellow-300 border border-black px-1 rounded-full shadow-sm"

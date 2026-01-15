@@ -25,7 +25,7 @@ export default function ScoreboardOverlay({
 
     return (
         <div className="absolute inset-0 bg-black/80 flex items-center justify-center z-50">
-            <div className="sketchy-border bg-white p-8 max-w-lg w-full text-center relative max-h-[90vh] overflow-y-auto">
+            <div className="sketchy-border bg-white p-6 md:p-8 mx-4 max-w-lg w-full text-center relative max-h-[85vh] overflow-y-auto rounded-xl shadow-2xl">
                 <h2 className="text-xl text-gray-500 mb-2">The word was...</h2>
                 <h1 className="text-4xl font-bold mb-8 animate-wobble text-blue-600 uppercase">{word}</h1>
 

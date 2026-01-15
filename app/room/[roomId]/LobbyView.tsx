@@ -3,7 +3,7 @@ import { COLORS } from '@/app/design_system';
 import { supabase } from '@/lib/supabase';
 import { useState } from 'react';
 import SettingsPanel from './SettingsPanel';
-import { useMusicPlayer } from '@/app/lib/musicPlayer';
+import GlobalControls from '@/app/components/GlobalControls';
 import logger from '@/app/lib/logger';
 import { generateAvatarSvg } from '@/app/components/AvatarSelector';
 
@@ -24,8 +24,7 @@ export default function LobbyView({ room, players: rawPlayers, currentPlayerId }
     const isHost = currentPlayer?.is_host;
     const [starting, setStarting] = useState(false);
 
-    // Lower volume music for lobby (0.15 = half of home page)
-    const { isPlaying, toggle: toggleMusic } = useMusicPlayer({ autoStart: true, volume: 0.15 });
+
 
     const maxPlayers = room.settings?.max_players || 8;
     const isFull = players.length >= maxPlayers;
@@ -92,14 +91,10 @@ export default function LobbyView({ room, players: rawPlayers, currentPlayerId }
 
     return (
         <div className="flex flex-col items-center min-h-screen p-4">
-            {/* Music Toggle */}
-            <button
-                onClick={toggleMusic}
-                className="absolute top-4 right-4 z-20 text-2xl p-2 hover:scale-110 transition-transform bg-white rounded-full shadow-lg border-2 border-black"
-                title={isPlaying ? 'Stop Music' : 'Play Music'}
-            >
-                {isPlaying ? '🎵' : '🔇'}
-            </button>
+            {/* Global Controls - Music Toggle + Settings */}
+            <div className="absolute top-4 right-4 z-20">
+                <GlobalControls />
+            </div>
 
             <div className="max-w-2xl w-full">
                 {/* Header */}
@@ -132,6 +127,12 @@ export default function LobbyView({ room, players: rawPlayers, currentPlayerId }
                                     <div className="w-24 h-24 rounded-full overflow-hidden border-2 border-black bg-gray-50">
                                         <img src={avatarSvg} alt={p.display_name} className="w-full h-full" />
                                     </div>
+                                    {/* Online/Offline Indicator */}
+                                    <div
+                                        className={`absolute bottom-0 right-0 w-5 h-5 rounded-full border-2 border-white shadow-md ${p.is_connected ? 'bg-green-500' : 'bg-gray-400'
+                                            }`}
+                                        title={p.is_connected ? 'Online' : 'Offline'}
+                                    />
                                     {p.is_host && (
                                         <div className="absolute -top-3 -right-3 text-2xl filter drop-shadow-md animate-bounce-slow" title="Host">
                                             👑

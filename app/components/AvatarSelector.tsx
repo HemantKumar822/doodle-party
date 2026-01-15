@@ -71,13 +71,14 @@ export default function AvatarSelector({ value, onChange, size = 80 }: AvatarSel
         }
     }, [currentSeed]);
 
-    // Generate preview avatars for each style
+    // Generate preview avatars for each style (use FIXED seeds for style previews)
+    // This ensures style selector thumbnails stay consistent, only main avatar uses currentSeed
     const stylePreviews = useMemo(() => {
         return AVATAR_STYLES.map(s => ({
             ...s,
-            svg: generateAvatarSvg({ style: s.id, seed: currentSeed }, 48),
+            svg: generateAvatarSvg({ style: s.id, seed: 'preview' }, 48),
         }));
-    }, [currentSeed]);
+    }, []);
 
     // Current avatar preview
     const currentAvatar = useMemo(() => {
@@ -95,14 +96,16 @@ export default function AvatarSelector({ value, onChange, size = 80 }: AvatarSel
         setCurrentSeed(randomSeed());
     };
 
-    // Show loading placeholder during SSR/hydration
+    // Show static placeholder during SSR/hydration (exact same layout, no animation)
     if (!isMounted) {
         return (
             <div className="flex flex-col items-center gap-3">
-                <div className="w-24 h-24 rounded-full border-4 border-black bg-gray-100 animate-pulse" />
-                <div className="flex gap-2">
+                <div className="relative">
+                    <div className="w-24 h-24 rounded-full border-4 border-black bg-gray-50" />
+                </div>
+                <div className="flex gap-2 flex-wrap justify-center">
                     {[1, 2, 3, 4, 5].map(i => (
-                        <div key={i} className="w-12 h-12 rounded-full bg-gray-100 animate-pulse" />
+                        <div key={i} className="w-12 h-12 rounded-full border-2 border-gray-200 bg-gray-50" />
                     ))}
                 </div>
             </div>

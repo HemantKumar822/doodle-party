@@ -11,8 +11,7 @@ interface GameHeaderProps {
     hasGuessedCorrectly: boolean;
     showScoreboard: boolean;
     revealedLetters: Set<number>;
-    isMuted: boolean;
-    onToggleMute: () => void;
+    children?: React.ReactNode;
 }
 
 /**
@@ -28,8 +27,7 @@ function GameHeader({
     hasGuessedCorrectly,
     showScoreboard,
     revealedLetters,
-    isMuted,
-    onToggleMute,
+    children,
 }: GameHeaderProps) {
     // Generate word display (underscores with revealed letters for guessers)
     const getWordDisplay = () => {
@@ -62,16 +60,6 @@ function GameHeader({
 
             {/* Controls */}
             <div className="flex items-center gap-2 md:gap-3">
-                {/* Mute Button */}
-                <button
-                    onClick={onToggleMute}
-                    className="text-xl md:text-2xl hover:scale-110 transition-transform"
-                    title={isMuted ? 'Unmute' : 'Mute'}
-                    aria-label={isMuted ? 'Unmute sounds' : 'Mute sounds'}
-                >
-                    {isMuted ? '🔇' : '🔊'}
-                </button>
-
                 {/* Timer */}
                 <div
                     className={`text-xl md:text-2xl font-bold ${timeLeft < 10 ? 'text-red-500 animate-pulse' : 'text-black'
@@ -80,6 +68,9 @@ function GameHeader({
                 >
                     {timeLeft}s
                 </div>
+
+                {/* Additional Controls (Settings/Menu) */}
+                {children}
             </div>
         </div>
     );

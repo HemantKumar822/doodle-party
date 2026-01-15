@@ -79,118 +79,34 @@ function ChatPanel({
 
     return (
         <>
-            {/* Mobile: Peek-style Bottom Sheet */}
-            <div
-                ref={panelRef}
-                className={`
-                    md:hidden fixed inset-x-0 bottom-0 z-30 flex flex-col bg-white border-t-4 border-black 
-                    transition-all duration-300 ease-out
-                    ${isOpen ? 'h-[55vh]' : `h-[${PEEK_HEIGHT}px]`}
-                `}
-                style={{ height: isOpen ? '55vh' : `${PEEK_HEIGHT}px` }}
-            >
-                {/* Peek Bar / Drag Handle - Always visible */}
-                <div
-                    className="flex items-center justify-between px-3 py-2 bg-yellow-50 border-b-2 border-gray-200 cursor-pointer select-none touch-none"
-                    onClick={onToggle}
-                    onTouchStart={handleTouchStart}
-                    onTouchEnd={handleTouchEnd}
-                    role="button"
-                    aria-expanded={isOpen}
-                    aria-label={isOpen ? "Collapse chat" : "Expand chat"}
-                >
-                    {/* Drag indicator */}
-                    <div className="absolute left-1/2 -translate-x-1/2 top-1 w-10 h-1 bg-gray-300 rounded-full" />
-
-                    <div className="flex items-center gap-2 mt-1">
-                        <span className="text-lg">💬</span>
-                        {!isOpen && recentMessage && (
-                            <span className="text-xs text-gray-600 truncate max-w-[150px]">
-                                <span className="font-bold">{recentMessage.name}:</span>{' '}
-                                {recentMessage.is_correct ? '🎉 Correct!' : recentMessage.guess_text}
-                            </span>
-                        )}
-                        {!isOpen && !recentMessage && (
-                            <span className="text-xs text-gray-400">Tap to chat</span>
-                        )}
-                        {isOpen && <span className="font-bold text-sm">Chat</span>}
-                    </div>
-
-                    <div className="flex items-center gap-2 mt-1">
-                        {!isOpen && unreadCount > 0 && (
-                            <span className="bg-green-500 text-white text-xs px-1.5 py-0.5 rounded-full font-bold">
-                                {unreadCount}
-                            </span>
-                        )}
-                        <span className={`text-gray-400 transition-transform ${isOpen ? 'rotate-180' : ''}`}>
-                            ▲
-                        </span>
-                    </div>
-                </div>
-
-                {/* Expanded Content */}
-                {isOpen && (
-                    <>
-                        {/* Messages List */}
-                        <div
-                            className="flex-1 overflow-y-auto p-2 space-y-2 bg-paper"
-                            ref={chatRef}
-                            role="log"
-                            aria-label="Chat messages"
+            {/* Mobile: Persistent Bottom Input Bar (No Peek) */}
+            {/* Mobile: Persistent Bottom Chat (No Peek) */}
+            <div className="md:hidden fixed inset-x-0 bottom-0 z-30 pointer-events-none pb-safe">
+                {!isDrawer ? (
+                    <form
+                        onSubmit={onSubmitGuess}
+                        className="p-3 flex gap-2 items-center pointer-events-auto bg-gradient-to-t from-white via-white/80 to-transparent"
+                    >
+                        <input
+                            className="flex-1 border-2 border-black rounded px-3 py-2 font-inherit focus:ring-4 focus:ring-yellow-200/50 outline-none bg-white text-base shadow-[2px_2px_0px_rgba(0,0,0,0.1)] transition-all"
+                            placeholder="Type a guess..."
+                            value={guess}
+                            onChange={e => onGuessChange(e.target.value)}
+                            maxLength={30}
+                            aria-label="Enter your guess"
+                        />
+                        <button
+                            type="submit"
+                            className="doodle-button py-1 px-2.5 text-xs font-bold flex items-center justify-center shadow-[1px_1px_0px_rgba(0,0,0,1)] active:translate-y-[1px] active:shadow-none transition-all border-2 border-black bg-yellow-300 rounded"
+                            aria-label="Send"
                         >
-                            {messages.length === 0 ? (
-                                <div className="text-center text-gray-400 py-8">
-                                    <p className="text-2xl mb-2">💬</p>
-                                    <p className="text-sm">No guesses yet...</p>
-                                </div>
-                            ) : (
-                                messages.map((m, i) => (
-                                    <div
-                                        key={m.id || i}
-                                        className={`text-sm p-1.5 rounded ${m.is_correct
-                                            ? 'bg-green-100 text-green-800 border border-green-300'
-                                            : 'bg-white border border-gray-100'
-                                            }`}
-                                    >
-                                        <span className="font-bold">{m.name}: </span>
-                                        {m.is_correct ? (
-                                            <span>🎉 Guessed correctly!</span>
-                                        ) : (
-                                            m.guess_text
-                                        )}
-                                    </div>
-                                ))
-                            )}
-                        </div>
-
-                        {/* Input Area */}
-                        {!isDrawer ? (
-                            <form
-                                onSubmit={onSubmitGuess}
-                                className="p-2 border-t-2 border-gray-200 bg-gray-50 flex gap-2 shrink-0 pb-safe"
-                            >
-                                <input
-                                    className="flex-1 border-2 border-black rounded px-2 py-2 font-inherit focus:ring-2 focus:ring-yellow-300 outline-none"
-                                    placeholder="Type guess..."
-                                    value={guess}
-                                    onChange={e => onGuessChange(e.target.value)}
-                                    maxLength={30}
-                                    aria-label="Enter your guess"
-                                    autoFocus
-                                />
-                                <button
-                                    type="submit"
-                                    className="doodle-button py-1 px-4 text-sm"
-                                >
-                                    Send
-                                </button>
-                            </form>
-                        ) : (
-                            <div className="p-2 border-t font-bold text-center text-gray-500 bg-gray-100 pb-safe">
-                                Draw the word!
-                            </div>
-                        )}
-                    </>
+                            Send
+                        </button>
+                    </form>
+                ) : (
+                    <div className="p-3 text-center pointer-events-auto bg-white/90 backdrop-blur-sm border-t-2 border-dashed border-gray-300">
+                        <span className="font-bold text-gray-500 animate-pulse">✏️ You are drawing!</span>
+                    </div>
                 )}
             </div>
 
@@ -212,12 +128,12 @@ function ChatPanel({
                         messages.map((m, i) => (
                             <div
                                 key={m.id || i}
-                                className={`text-sm p-1 rounded ${m.is_correct
-                                    ? 'bg-green-100 text-green-800 border border-green-300'
-                                    : 'bg-white border border-gray-100'
+                                className={`text-sm px-1 py-0.5 ${m.is_correct
+                                    ? 'text-green-700 font-bold'
+                                    : 'text-gray-700'
                                     }`}
                             >
-                                <span className="font-bold">{m.name}: </span>
+                                <span className="font-semibold">{m.name}: </span>
                                 {m.is_correct ? (
                                     <span>🎉 Guessed correctly!</span>
                                 ) : (
@@ -232,11 +148,11 @@ function ChatPanel({
                 {!isDrawer ? (
                     <form
                         onSubmit={onSubmitGuess}
-                        className="p-2 border-t-2 border-gray-200 bg-gray-50 flex gap-2 shrink-0"
+                        className="p-3 border-t-2 border-dashed border-gray-300 bg-white/50 backdrop-blur-sm flex gap-3 shrink-0 items-center justify-center transition-all"
                     >
                         <input
-                            className="flex-1 border-2 border-black rounded px-2 py-1 font-inherit focus:ring-2 focus:ring-yellow-300 outline-none"
-                            placeholder="Type guess..."
+                            className="flex-1 max-w-[200px] border-2 border-black rounded px-3 py-2 font-inherit focus:ring-4 focus:ring-yellow-200/50 outline-none bg-white shadow-sm transition-all"
+                            placeholder="Type a guess..."
                             value={guess}
                             onChange={e => onGuessChange(e.target.value)}
                             maxLength={30}
@@ -244,7 +160,7 @@ function ChatPanel({
                         />
                         <button
                             type="submit"
-                            className="doodle-button py-1 px-4 text-sm"
+                            className="doodle-button py-1 px-2.5 text-xs font-bold flex items-center justify-center shadow-[1px_1px_0px_rgba(0,0,0,1)] active:translate-y-[1px] active:shadow-none transition-all border-2 border-black bg-yellow-300 rounded"
                         >
                             Send
                         </button>
@@ -255,15 +171,6 @@ function ChatPanel({
                     </div>
                 )}
             </div>
-
-            {/* Overlay to close chat on mobile when expanded */}
-            {isOpen && (
-                <div
-                    className="fixed inset-0 bg-black/30 z-20 md:hidden"
-                    onClick={onToggle}
-                    aria-hidden="true"
-                />
-            )}
         </>
     );
 }
