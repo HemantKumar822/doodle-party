@@ -595,22 +595,24 @@ export default function GameView({ room, players, currentPlayerId }: GameViewPro
 
                         return (
                             <div key={p.id} className={`
-                                flex-shrink-0 flex items-center gap-2 p-1 border-2 bg-white transition-all relative
-                                ${safestDrawer && p.id === safestDrawer.id ? 'border-blue-500 bg-blue-50 shadow-md' : 'border-black shadow-sm'}
+                                flex-shrink-0 flex items-center gap-2 p-1 border-2 transition-all relative
+                                ${safestDrawer && p.id === safestDrawer.id ? 'border-blue-500 bg-blue-50 shadow-md' : 'border-black bg-white shadow-sm'}
+                                ${!p.is_connected ? 'opacity-50 grayscale' : ''}
                                 rounded-md md:sketchy-border md:rounded-none md:p-2 md:w-full
                             `}>
-                                <div className="relative w-8 h-8 md:w-10 md:h-10 flex-shrink-0">
-                                    <div className={`w-full h-full rounded-full overflow-hidden border ${isLeader ? 'border-yellow-400 ring-1 ring-yellow-200' : 'border-black'} bg-white`}>
-                                        <img
-                                            src={generateAvatarSvg(avatarConfig, 48)}
-                                            alt={p.display_name}
-                                            className="w-full h-full"
-                                        />
+                                <div className="relative w-8 h-8 md:w-10 md:h-10 shrink-0">
+                                    <div className="w-full h-full rounded-full overflow-hidden border border-black bg-gray-100">
+                                        <img src={generateAvatarSvg(avatarConfig, 40)} alt={p.display_name} className="w-full h-full" />
                                     </div>
+                                    {/* Connectivity Indicator */}
+                                    {!p.is_connected && (
+                                        <div className="absolute -bottom-1 -right-1 w-3 h-3 bg-gray-500 rounded-full border border-white" title="Offline" />
+                                    )}
+                                    {p.is_connected && (
+                                        <div className="absolute -bottom-1 -right-1 w-3 h-3 bg-green-500 rounded-full border border-white" title="Online" />
+                                    )}
                                     {isLeader && (
-                                        <div className="absolute -top-2 -right-1 text-xs filter drop-shadow-sm animate-bounce-slow" title="Leader">
-                                            👑
-                                        </div>
+                                        <div className="absolute -top-2 -left-1 text-xs md:text-sm animate-bounce">👑</div>
                                     )}
                                 </div>
                                 <div className="min-w-0 max-w-[80px] md:max-w-none md:flex-1">

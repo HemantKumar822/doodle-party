@@ -86,6 +86,20 @@ export function useGameState(roomId: string, currentPlayerId: string | null = nu
     const [rawPlayers, setRawPlayers] = useState<Player[]>(initialPlayers || []);
     const [onlineIds, setOnlineIds] = useState<Set<string>>(new Set());
 
+
+    const refresh = async () => {
+        const { data: playersData } = await supabase
+            .from('players')
+            .select('*')
+            .eq('room_id', roomId)
+            .order('turn_order', { ascending: true });
+
+        if (playersData) {
+            setRawPlayers(playersData);
+            logger.debug('Manually refreshed player list', { context: 'network', data: { count: playersData.length } });
+        }
+    };
+
     useEffect(() => {
         if (!roomId || !currentPlayerId) return;
 
@@ -99,6 +113,9 @@ export function useGameState(roomId: string, currentPlayerId: string | null = nu
                 const ids = new Set(Object.keys(state));
                 setOnlineIds(ids);
                 logger.debug('Presence Sync', { context: 'network', data: { count: ids.size, ids: Array.from(ids) } });
+
+                // Trigger refresh to check if an offline player was actually deleted (left room)
+                refresh();
             })
             .subscribe(async (status) => {
                 if (status === 'SUBSCRIBED') {
@@ -125,19 +142,6 @@ export function useGameState(roomId: string, currentPlayerId: string | null = nu
             setPlayers(merged);
         }
     }, [rawPlayers, onlineIds]);
-
-    const refresh = async () => {
-        const { data: playersData } = await supabase
-            .from('players')
-            .select('*')
-            .eq('room_id', roomId)
-            .order('turn_order', { ascending: true });
-
-        if (playersData) {
-            setRawPlayers(playersData);
-            logger.debug('Manually refreshed player list', { context: 'network', data: { count: playersData.length } });
-        }
-    };
 
     return { room, players, error, refresh };
 }
