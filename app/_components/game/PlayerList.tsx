@@ -56,7 +56,7 @@ const PlayerItem = React.memo(function PlayerItem({
                 />
                 {player.is_host && (
                     <div
-                        className="absolute -top-2 -right-2 text-xs bg-yellow-300 border border-black px-1 rounded-full shadow-sm"
+                        className="absolute -bottom-2 left-1/2 transform -translate-x-1/2 text-[10px] bg-black text-white border border-white px-1.5 py-0.5 rounded-full shadow-sm font-bold tracking-wider leading-none z-10"
                         title="Host"
                     >
                         HOST

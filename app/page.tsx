@@ -9,6 +9,7 @@ import { DEFAULT_SETTINGS } from './_types/game';
 import { useAudio } from './_contexts/AudioContext';
 import GlobalControls from './_components/GlobalControls';
 import AvatarSelector, { AvatarConfig, defaultAvatarConfig } from './_components/AvatarSelector';
+import ProfileStatsModal from './_components/ProfileStatsModal';
 import logger from './_lib/logger';
 
 // localStorage keys
@@ -24,22 +25,24 @@ export default function Home() {
   const [joinError, setJoinError] = useState<string | null>(null);
   const [joining, setJoining] = useState(false);
   const { isMusicPlaying, toggleMusic } = useAudio();
-  const [avatar, setAvatar] = useState<AvatarConfig>(defaultAvatarConfig());
+  // LAZY INITIALIZATION: Read from localStorage immediately to prevent flash/race conditions
+  const [avatar, setAvatar] = useState<AvatarConfig>(() => {
+    if (typeof window === 'undefined') return defaultAvatarConfig();
+    try {
+      const saved = localStorage.getItem(STORAGE_KEY_AVATAR);
+      return saved ? JSON.parse(saved) : defaultAvatarConfig();
+    } catch {
+      return defaultAvatarConfig();
+    }
+  });
+
   const handleAvatarChange = useCallback((config: AvatarConfig) => setAvatar(config), []);
 
-  // Load saved preferences on mount
+  // Load saved name on mount
   useEffect(() => {
     if (typeof window === 'undefined') return;
-
     const savedName = localStorage.getItem(STORAGE_KEY_NAME);
-    const savedAvatar = localStorage.getItem(STORAGE_KEY_AVATAR);
-
     if (savedName) setName(savedName);
-    if (savedAvatar) {
-      try {
-        setAvatar(JSON.parse(savedAvatar));
-      } catch (e) { /* ignore parse errors */ }
-    }
   }, []);
 
   // Save name when it changes (debounced effect)
@@ -74,7 +77,17 @@ export default function Home() {
         ? avatar
         : { style: 'adventurer', seed: 'default' };
 
-      // 1. Create Room with default settings
+      // 1. Create Room with default or saved settings
+      let initialSettings = DEFAULT_SETTINGS;
+      if (typeof window !== 'undefined') {
+        const savedSettings = localStorage.getItem('doodleparty_settings');
+        if (savedSettings) {
+          try {
+            initialSettings = { ...DEFAULT_SETTINGS, ...JSON.parse(savedSettings) };
+          } catch { /* ignore */ }
+        }
+      }
+
       const roomCode = Math.random().toString(36).substring(2, 8).toUpperCase();
       const { data: room, error: roomError } = await supabase
         .from('rooms')
@@ -82,8 +95,8 @@ export default function Home() {
           room_code: roomCode,
           status: 'waiting',
           current_round: 1,
-          max_rounds: 3,
-          settings: DEFAULT_SETTINGS
+          max_rounds: initialSettings.rounds,
+          settings: initialSettings
         })
         .select()
         .single();
@@ -122,17 +135,35 @@ export default function Home() {
 
       logger.success(`Redirecting to party ${roomCode}`, { context: 'room' });
       router.push(`/room/${room.id}`);
+      // NOTE: Do NOT set loading(false) here. 
+      // We want the button to stay "Creating..." until the page unmounts/redirects.
+      // If we flip it back, the user sees a "success flash" and might click again.
     } catch (e: unknown) {
       const err = e as { message?: string; code?: string; details?: string };
       logger.room.error('Create party failed', e);
       alert(`Error creating party: ${err?.message || 'Unknown error'}. Please try again.`);
-    } finally {
-      setLoading(false);
+      setLoading(false); // Only reset on error
     }
   };
 
+
+
+  const [showStats, setShowStats] = useState(false);
+
   return (
     <main className="flex min-h-screen flex-col items-center justify-center p-4 relative overflow-hidden">
+      {/* Profile / Stats Button */}
+      <button
+        onClick={() => setShowStats(true)}
+        className="absolute top-4 left-4 z-50 w-10 h-10 flex items-center justify-center bg-white/90 backdrop-blur-sm border-2 border-black rounded-full shadow-md hover:scale-110 active:scale-95 transition-transform"
+        title="My Profile"
+        aria-label="Open Profile"
+      >
+        <span className="text-xl">👤</span>
+      </button>
+
+      <ProfileStatsModal isOpen={showStats} onClose={() => setShowStats(false)} />
+
       {/* Global Controls - Music Toggle + Settings */}
       <div className="absolute top-4 right-4 z-20">
         <GlobalControls />

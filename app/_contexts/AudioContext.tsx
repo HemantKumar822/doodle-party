@@ -17,7 +17,7 @@ interface AudioContextType {
     setSfxMuted: (muted: boolean) => void;
     setVolume: (vol: number) => void;
     toggleSfx: () => void;
-    playSound: (type: 'correct' | 'wrong' | 'turnEnd' | 'yourTurn' | 'tick' | 'tickFast' | 'click' | 'pop') => void;
+    playSound: (type: 'correct' | 'wrong' | 'turnEnd' | 'yourTurn' | 'tick' | 'tickFast' | 'click' | 'pop' | 'playerJoin' | 'playerLeave') => void;
 }
 
 const AudioContext = createContext<AudioContextType | null>(null);
@@ -130,45 +130,83 @@ class MusicPlayer {
 const musicPlayerInstance = new MusicPlayer();
 
 export function AudioProvider({ children }: { children: React.ReactNode }) {
-    // Load initial state from localStorage
+    // LAZY INITIALIZATION: Read from localStorage immediately if possible to avoid flash of wrong state
+    const [isMuted, setIsMuted] = useState(() => {
+        if (typeof window === 'undefined') return false;
+        return localStorage.getItem('doodleparty_muted') === 'true';
+    });
+
+    // SFX mute state
+    const [isSfxMuted, setIsSfxMuted] = useState(() => {
+        if (typeof window === 'undefined') return false;
+        return localStorage.getItem('doodleparty_sfx_muted') === 'true';
+    });
+
     const [isMusicPlaying, setIsMusicPlaying] = useState(false);
-    const [isMuted, setIsMuted] = useState(false);
-    const [isSfxMuted, setIsSfxMuted] = useState(false);
-    const [volume, setVolumeState] = useState(0.3);
     const audioContextRef = useRef<AudioContext | null>(null);
+    const [volume, setVolumeState] = useState(() => {
+        if (typeof window === 'undefined') return 0.5;
+        const saved = localStorage.getItem('doodleparty_volume');
+        return saved ? parseFloat(saved) : 0.5;
+    });
 
-    // Initialize from localStorage on mount
+    // Initialize audio context for effects
     useEffect(() => {
-        if (typeof window === 'undefined') return;
-
-        const storedMuted = localStorage.getItem('doodleparty_muted'); // Legacy: mapped to music mute for now or global
-        const storedSfxMuted = localStorage.getItem('doodleparty_sfx_muted');
-        const storedVolume = localStorage.getItem('doodleparty_volume');
-
-        if (storedMuted !== null) setIsMuted(storedMuted === 'true');
-        if (storedSfxMuted !== null) setIsSfxMuted(storedSfxMuted === 'true');
-        if (storedVolume !== null) setVolumeState(parseFloat(storedVolume));
-
-        // Initialize audio context for sound effects
         try {
             audioContextRef.current = new (window.AudioContext || (window as any).webkitAudioContext)();
         } catch (e) {
             console.warn('Web Audio API not supported');
         }
+    }, []);
 
-        // Auto-start music on first user interaction (click/touch)
+    // Persist volume changes
+    useEffect(() => {
+        localStorage.setItem('doodleparty_volume', volume.toString());
+        musicPlayerInstance.setVolume(volume);
+    }, [volume]);
+
+    // Persist mute changes
+    useEffect(() => {
+        localStorage.setItem('doodleparty_muted', isMuted.toString());
+        if (isMuted) {
+            musicPlayerInstance.stop();
+            setIsMusicPlaying(false);
+        } else if (!isMusicPlaying && !AudioContext) {
+            // Logic simplified: we don't auto-start here to avoid complexity
+        }
+    }, [isMuted, isMusicPlaying]);
+
+    useEffect(() => {
+        localStorage.setItem('doodleparty_sfx_muted', isSfxMuted.toString());
+    }, [isSfxMuted]);
+
+    // Auto-start music on first user interaction - BUT ONLY IF NOT MUTED
+    useEffect(() => {
         const startMusicOnInteraction = () => {
-            if (!isMuted) {
+            // CRITICAL FIX: explicit check against localStorage directly
+            // This ensures we respect the user's saved preference even if state is stale
+            const savedMuted = localStorage.getItem('doodleparty_muted') === 'true';
+
+            if (!savedMuted) {
                 musicPlayerInstance.start();
                 setIsMusicPlaying(true);
             }
-            // Remove listeners after first interaction
+
+            // Resume Audio Context for SFX
+            if (audioContextRef.current?.state === 'suspended') {
+                audioContextRef.current.resume();
+            }
+
+            // Clean up
             document.removeEventListener('click', startMusicOnInteraction);
             document.removeEventListener('touchstart', startMusicOnInteraction);
         };
 
-        document.addEventListener('click', startMusicOnInteraction, { once: true });
-        document.addEventListener('touchstart', startMusicOnInteraction, { once: true });
+        const hasInteracted = audioContextRef.current?.state === 'running';
+        if (!hasInteracted) {
+            document.addEventListener('click', startMusicOnInteraction, { once: true });
+            document.addEventListener('touchstart', startMusicOnInteraction, { once: true });
+        }
 
         return () => {
             document.removeEventListener('click', startMusicOnInteraction);
@@ -201,16 +239,22 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
     }, [volume]);
 
     const toggleMusic = useCallback(() => {
-        if (isMuted) {
-            // If muted, toggling music should unmute music first
-            setIsMuted(false);
-            const playing = musicPlayerInstance.toggle();
-            setIsMusicPlaying(playing);
-            return;
+        // First Principles: If user toggles music, they are expressing a PREFERENCE.
+        // If it was playing, they want it OFF (Muted).
+        // If it was off, they want it ON (Unmuted).
+
+        if (isMusicPlaying) {
+            // Turn OFF
+            musicPlayerInstance.stop();
+            setIsMusicPlaying(false);
+            setIsMuted(true); // Persist this choice!
+        } else {
+            // Turn ON
+            setIsMuted(false); // Unmute first
+            musicPlayerInstance.start();
+            setIsMusicPlaying(true);
         }
-        const playing = musicPlayerInstance.toggle();
-        setIsMusicPlaying(playing);
-    }, [isMuted]);
+    }, [isMusicPlaying]);
 
     const setMuted = useCallback((muted: boolean) => {
         setIsMuted(muted);
@@ -229,7 +273,7 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
     }, []);
 
     // Sound effects player
-    const playSound = useCallback((type: 'correct' | 'wrong' | 'turnEnd' | 'yourTurn' | 'tick' | 'tickFast' | 'click' | 'pop') => {
+    const playSound = useCallback((type: 'correct' | 'wrong' | 'turnEnd' | 'yourTurn' | 'tick' | 'tickFast' | 'click' | 'pop' | 'playerJoin' | 'playerLeave') => {
         if (isSfxMuted || !audioContextRef.current) return;
 
         const ctx = audioContextRef.current;
@@ -248,6 +292,8 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
             tickFast: { freq: 1200, duration: 0.03, type: 'square' },
             click: { freq: 600, duration: 0.05, type: 'sine' },
             pop: { freq: 520, duration: 0.08, type: 'sine' },
+            playerJoin: { freq: 440, duration: 0.12, type: 'sine' }, // Rising welcome tone
+            playerLeave: { freq: 330, duration: 0.2, type: 'triangle' }, // Falling departure tone
         };
 
         const sound = sounds[type] || sounds.click;

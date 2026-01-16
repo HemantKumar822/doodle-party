@@ -16,7 +16,7 @@ interface WordSelectorProps {
  */
 function WordSelector({ words, timeLeft, onSelectWord }: WordSelectorProps) {
     return (
-        <div className="absolute inset-0 bg-black/80 flex items-center justify-center z-50 transition-opacity p-4">
+        <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-[100] backdrop-blur-sm transition-opacity p-4 animate-fade-in">
             <div className="sketchy-border bg-white p-4 md:p-8 text-center animate-wobble shadow-xl w-full max-w-xl">
                 <h2 className="text-xl md:text-2xl mb-1 font-bold">Pick Your Challenge! 🎯</h2>
                 <p className="text-sm text-gray-500 mb-3">Harder words = more bonus points!</p>

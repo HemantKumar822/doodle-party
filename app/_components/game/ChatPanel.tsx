@@ -12,6 +12,7 @@ interface Message {
 interface ChatPanelProps {
     messages: Message[];
     isDrawer: boolean;
+    isSpectator?: boolean; // Spectators can watch but not guess
     guess: string;
     onGuessChange: (value: string) => void;
     onSubmitGuess: (e: React.FormEvent) => void;
@@ -29,6 +30,7 @@ const PEEK_HEIGHT = 48; // Height of the peek bar in pixels
 function ChatPanel({
     messages,
     isDrawer,
+    isSpectator = false,
     guess,
     onGuessChange,
     onSubmitGuess,
@@ -82,7 +84,11 @@ function ChatPanel({
             {/* Mobile: Persistent Bottom Input Bar (No Peek) */}
             {/* Mobile: Persistent Bottom Chat (No Peek) */}
             <div className="md:hidden fixed inset-x-0 bottom-0 z-30 pointer-events-none pb-safe">
-                {!isDrawer ? (
+                {isSpectator ? (
+                    <div className="p-3 text-center pointer-events-auto bg-purple-100/90 backdrop-blur-sm border-t-2 border-dashed border-purple-300">
+                        <span className="font-bold text-purple-600">👀 Spectator Mode - You can watch but not guess</span>
+                    </div>
+                ) : !isDrawer ? (
                     <form
                         onSubmit={onSubmitGuess}
                         className="p-2 flex gap-2 items-center pointer-events-auto bg-gradient-to-t from-white via-white/80 to-transparent"
@@ -145,7 +151,11 @@ function ChatPanel({
                 </div>
 
                 {/* Input Area */}
-                {!isDrawer ? (
+                {isSpectator ? (
+                    <div className="p-2 border-t font-bold text-center text-purple-600 bg-purple-50">
+                        👀 Spectator Mode
+                    </div>
+                ) : !isDrawer ? (
                     <form
                         onSubmit={onSubmitGuess}
                         className="p-3 border-t-2 border-dashed border-gray-300 bg-white/50 backdrop-blur-sm flex gap-2 shrink-0 items-center transition-all"

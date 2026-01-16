@@ -16,6 +16,8 @@ interface GameHeaderProps {
     gameMode?: GameMode;
     relaySegment?: number;
     children?: React.ReactNode;
+    drawerName?: string;  // Name of the current drawer
+    isChoosingWord?: boolean;  // True when drawer is selecting a word
 }
 
 /**
@@ -34,12 +36,14 @@ function GameHeader({
     gameMode = 'classic',
     relaySegment = 0,
     children,
+    drawerName,
+    isChoosingWord = false,
 }: GameHeaderProps) {
     const modeConfig = GAME_MODE_CONFIG[gameMode];
 
     // Generate word display (underscores with revealed letters for guessers)
     const getWordDisplay = () => {
-        if (!currentWord) return 'WAITING...';
+        if (!currentWord) return 'CHOOSING...';
 
         // Drawer or already guessed - show full word
         if (isDrawer || hasGuessedCorrectly || showScoreboard) {
@@ -56,8 +60,8 @@ function GameHeader({
 
     return (
         <div className="flex shrink-0 justify-between items-center p-2 border-b-2 border-black bg-white z-10 shadow-sm md:mb-4 md:sketchy-border md:p-3 md:shadow-md">
-            {/* Left: Round + Mode Badge */}
-            <div className="flex items-center gap-2">
+            {/* Left: Round + Mode Badge - Fixed width on desktop to match player sidebar */}
+            <div className="flex items-center gap-2 md:w-52 md:shrink-0">
                 <div className="text-lg md:text-xl font-bold">
                     Round {currentRound}/{maxRounds}
                 </div>
@@ -85,8 +89,8 @@ function GameHeader({
                 )}
             </div>
 
-            {/* Right: Timer + Controls */}
-            <div className="flex items-center gap-2 md:gap-3">
+            {/* Right: Timer + Controls - Fixed width on desktop to match chat sidebar */}
+            <div className="flex items-center justify-end gap-2 md:gap-3 md:w-80 md:shrink-0">
                 {/* Timer */}
                 <div
                     className={`text-xl md:text-2xl font-bold ${timeLeft < 10 ? 'text-red-500 animate-pulse' : 'text-black'

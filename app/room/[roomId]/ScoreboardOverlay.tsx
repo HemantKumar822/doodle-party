@@ -1,6 +1,7 @@
 import { Player } from "@/app/_types/game";
 import { COLORS } from "@/app/design_system";
 import Button from "@/app/_components/ui/Button";
+import { useState, useEffect } from "react";
 
 interface ScoreboardOverlayProps {
     players: Player[];
@@ -10,6 +11,41 @@ interface ScoreboardOverlayProps {
     isHost: boolean;
     isGameOver: boolean;
     onContinue?: () => void;
+}
+
+// Animated score counter component
+function AnimatedScore({ value, duration = 1000 }: { value: number; duration?: number }) {
+    const [displayValue, setDisplayValue] = useState(0);
+
+    useEffect(() => {
+        if (value === 0) {
+            setDisplayValue(0);
+            return;
+        }
+
+        const startTime = Date.now();
+        const startValue = 0;
+
+        const animate = () => {
+            const now = Date.now();
+            const elapsed = now - startTime;
+            const progress = Math.min(elapsed / duration, 1);
+
+            // Ease-out animation
+            const eased = 1 - Math.pow(1 - progress, 3);
+            const current = Math.round(startValue + (value - startValue) * eased);
+
+            setDisplayValue(current);
+
+            if (progress < 1) {
+                requestAnimationFrame(animate);
+            }
+        };
+
+        requestAnimationFrame(animate);
+    }, [value, duration]);
+
+    return <>{displayValue}</>;
 }
 
 export default function ScoreboardOverlay({
@@ -25,7 +61,7 @@ export default function ScoreboardOverlay({
     const sorted = [...players].sort((a, b) => b.score - a.score);
 
     return (
-        <div className="absolute inset-0 bg-black/80 flex items-center justify-center z-50">
+        <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-[100] backdrop-blur-sm animate-fade-in">
             <div className="sketchy-border bg-white p-6 md:p-8 mx-4 max-w-lg w-full text-center relative max-h-[85vh] overflow-y-auto rounded-xl shadow-2xl">
                 <h2 className="text-xl text-gray-500 mb-2">The word was...</h2>
                 <h1 className="text-4xl font-bold mb-8 animate-wobble text-blue-600 uppercase">{word}</h1>
@@ -39,7 +75,9 @@ export default function ScoreboardOverlay({
                                 </span>
                                 <span>{p.display_name}</span>
                             </div>
-                            <div className="font-bold">{p.score} pts</div>
+                            <div className="font-bold text-lg">
+                                <AnimatedScore value={p.score} duration={800 + i * 200} /> pts
+                            </div>
                         </div>
                     ))}
                 </div>

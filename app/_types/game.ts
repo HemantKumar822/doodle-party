@@ -7,6 +7,7 @@ export interface RoomSettings {
     rounds: number;            // 1-10
     word_count: number;        // words to choose from (2, 3, 4)
     game_mode: GameMode;       // classic, speed, relay
+    hints_enabled: boolean;    // Enable progressive letter hints
 }
 
 export const DEFAULT_SETTINGS: RoomSettings = {
@@ -14,7 +15,8 @@ export const DEFAULT_SETTINGS: RoomSettings = {
     draw_time: 120,
     rounds: 3,
     word_count: 3,
-    game_mode: 'classic'
+    game_mode: 'classic',
+    hints_enabled: false
 };
 
 export interface Room {
@@ -45,6 +47,7 @@ export interface Player {
     score: number;
     is_host: boolean;
     is_connected: boolean;
+    is_spectator?: boolean;    // Late joiners watch as spectators
     turn_order: number | null;
     joined_at: string;
     avatar?: DiceBearAvatarConfig;    // DiceBear avatar config

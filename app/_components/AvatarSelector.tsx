@@ -56,47 +56,70 @@ export function defaultAvatarConfig(): AvatarConfig {
 }
 
 export default function AvatarSelector({ value, onChange, size = 80 }: AvatarSelectorProps) {
-    const [currentStyle, setCurrentStyle] = useState(value.style);
-    const [currentSeed, setCurrentSeed] = useState(value.seed);
     const [isMounted, setIsMounted] = useState(false);
     const hasRandomized = useRef(false);
 
-    // On client mount, generate a random seed if using default
+    // On client mount
     useEffect(() => {
         setIsMounted(true);
-        if (!hasRandomized.current && currentSeed === STABLE_DEFAULT_SEED) {
+
+        // Randomization Logic:
+        // Only randomize if:
+        // 1. We haven't done it yet this session (ref check)
+        // 2. The current seed is the "STABLE_DEFAULT" (meaning parent passed default)
+        // 3. No saved avatar exists in localStorage (Legacy check, though parent usually handles this now)
+
+        // Note: We check localStorage here as a safety fallback in case parent didn't load it,
+        // to prevent overwriting a saved avatar with a random one if the parent is slow to hydrate.
+        const savedAvatar = localStorage.getItem('doodleparty_avatar');
+        const hasSaved = !!savedAvatar;
+
+        if (!hasRandomized.current && value.seed === STABLE_DEFAULT_SEED && !hasSaved) {
             hasRandomized.current = true;
-            const newSeed = randomSeed();
-            setCurrentSeed(newSeed);
+            // Directly request change to parent
+            onChange({
+                style: value.style,
+                seed: randomSeed()
+            });
         }
-    }, [currentSeed]);
+    }, [value.seed, value.style, onChange]);
 
     // Generate preview avatars for each style (use FIXED seeds for style previews)
-    // This ensures style selector thumbnails stay consistent, only main avatar uses currentSeed
+    // Generate preview avatars:
+    // - Active style: Uses CURRENT seed (so you see updates)
+    // - Inactive styles: Uses FIXED seed (so they look like consistent category icons)
     const stylePreviews = useMemo(() => {
         return AVATAR_STYLES.map(s => ({
             ...s,
-            svg: generateAvatarSvg({ style: s.id, seed: 'preview' }, 48),
+            svg: generateAvatarSvg({
+                style: s.id,
+                seed: s.id === value.style ? value.seed : 'preview'
+            }, 48),
         }));
-    }, []);
+    }, [value.seed, value.style]);
 
-    // Current avatar preview
+    // Current avatar preview - Derived directly from props
     const currentAvatar = useMemo(() => {
-        return generateAvatarSvg({ style: currentStyle, seed: currentSeed }, size);
-    }, [currentStyle, currentSeed, size]);
-
-    // Update parent when config changes (after mount)
-    useEffect(() => {
-        if (isMounted) {
-            onChange({ style: currentStyle, seed: currentSeed });
-        }
-    }, [currentStyle, currentSeed, onChange, isMounted]);
+        return generateAvatarSvg({ style: value.style, seed: value.seed }, size);
+    }, [value.style, value.seed, size]);
 
     const randomize = () => {
-        setCurrentSeed(randomSeed());
+        onChange({
+            style: value.style,
+            seed: randomSeed()
+        });
     };
 
-    // Show static placeholder during SSR/hydration (exact same layout, no animation)
+    const handleStyleChange = (newStyle: string) => {
+        onChange({
+            style: newStyle,
+            // When switching styles, start with the "preview" seed
+            // This ensures the avatar matches the icon they just clicked (Principle of Least Surprise)
+            seed: 'preview'
+        });
+    };
+
+    // Show static placeholder during SSR/hydration to avoid mismatch
     if (!isMounted) {
         return (
             <div className="flex flex-col items-center gap-3">
@@ -133,8 +156,8 @@ export default function AvatarSelector({ value, onChange, size = 80 }: AvatarSel
                 {stylePreviews.map(s => (
                     <button
                         key={s.id}
-                        onClick={() => setCurrentStyle(s.id)}
-                        className={`w-12 h-12 rounded-full border-2 overflow-hidden transition-all ${currentStyle === s.id
+                        onClick={() => handleStyleChange(s.id)}
+                        className={`w-12 h-12 rounded-full border-2 overflow-hidden transition-all ${value.style === s.id
                             ? 'border-black scale-110 ring-2 ring-offset-2 ring-black'
                             : 'border-gray-300 hover:border-gray-500 hover:scale-105'
                             }`}
@@ -143,6 +166,7 @@ export default function AvatarSelector({ value, onChange, size = 80 }: AvatarSel
                         <img src={s.svg} alt={s.name} className="w-full h-full" />
                     </button>
                 ))}
+
             </div>
         </div>
     );

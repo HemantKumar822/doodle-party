@@ -43,8 +43,12 @@ interface ChatMessage extends Guess {
     name?: string;
 }
 
+import { usePlayerStats } from '@/app/_hooks/usePlayerStats';
+
 export default function GameView({ room, players, currentPlayerId }: GameViewProps) {
     const router = useRouter();
+    const { recordGame } = usePlayerStats();
+    const [hasRecordedStats, setHasRecordedStats] = useState(false);
     const [timeLeft, setTimeLeft] = useState(0);
     const [messages, setMessages] = useState<ChatMessage[]>([]);
     const [guess, setGuess] = useState('');
@@ -63,6 +67,53 @@ export default function GameView({ room, players, currentPlayerId }: GameViewPro
 
     // Relay mode tracking
     const [relaySegment, setRelaySegment] = useState(0);
+
+    // Idle timeout detection (3 minutes)
+    const IDLE_WARNING_TIME = 2 * 60 * 1000; // 2 minutes - show warning
+    const IDLE_KICK_TIME = 3 * 60 * 1000; // 3 minutes - auto-kick
+    const lastActivityRef = useRef<number>(Date.now());
+    const [showIdleWarning, setShowIdleWarning] = useState(false);
+
+    // Reset activity timer on user actions
+    const resetActivity = useCallback(() => {
+        lastActivityRef.current = Date.now();
+        setShowIdleWarning(false);
+    }, []);
+
+    // Track user activity
+    useEffect(() => {
+        const handleActivity = () => resetActivity();
+
+        // Listen for user interactions
+        window.addEventListener('mousemove', handleActivity);
+        window.addEventListener('keydown', handleActivity);
+        window.addEventListener('touchstart', handleActivity);
+        window.addEventListener('click', handleActivity);
+
+        // Check idle status every 30 seconds
+        const idleCheck = setInterval(() => {
+            const idleTime = Date.now() - lastActivityRef.current;
+
+            if (idleTime >= IDLE_KICK_TIME) {
+                // Auto-kick after 3 minutes
+                logger.warn('Player kicked for inactivity', { context: 'player' });
+                supabase.from('players').delete().eq('id', currentPlayerId).then(() => {
+                    localStorage.removeItem(`player_id_${room.id}`);
+                    window.location.href = '/?reason=idle';
+                });
+            } else if (idleTime >= IDLE_WARNING_TIME) {
+                setShowIdleWarning(true);
+            }
+        }, 30000);
+
+        return () => {
+            window.removeEventListener('mousemove', handleActivity);
+            window.removeEventListener('keydown', handleActivity);
+            window.removeEventListener('touchstart', handleActivity);
+            window.removeEventListener('click', handleActivity);
+            clearInterval(idleCheck);
+        };
+    }, [currentPlayerId, room.id, resetActivity]);
 
     // Sound effects
     const { isMuted, toggleMute, play: playSound } = useSoundManager();
@@ -96,7 +147,7 @@ export default function GameView({ room, players, currentPlayerId }: GameViewPro
         }
     }, [currentRelaySegment, relaySegment, gameMode, playSound]);
 
-    // Timer Logic with sound effects
+    // Timer Logic with sound effects + hints
     useEffect(() => {
         if (!room.turn_ends_at) {
             setTimeLeft(0);
@@ -104,6 +155,8 @@ export default function GameView({ room, players, currentPlayerId }: GameViewPro
         }
         const end = new Date(room.turn_ends_at).getTime();
         const drawTime = room.settings?.draw_time || 80;
+        const hintsEnabled = room.settings?.hints_enabled ?? false;
+        const HINT_INTERVAL = 20; // Reveal 1 letter every 20 seconds
 
         const interval = setInterval(() => {
             const now = Date.now();
@@ -117,10 +170,84 @@ export default function GameView({ room, players, currentPlayerId }: GameViewPro
                 playSound('tick');
             }
 
-            // REMOVED: Automatic hints (User requested removal)
+            // Conditional hints - reveal letters if enabled
+            if (hintsEnabled && room.current_word && left > 0) {
+                const elapsed = drawTime - left;
+                const hintsToReveal = Math.floor(elapsed / HINT_INTERVAL);
+
+                // Reveal letters progressively (max: word length - 1)
+                const word = room.current_word;
+                const maxHints = Math.max(0, word.replace(/ /g, '').length - 1);
+                const actualHints = Math.min(hintsToReveal, maxHints);
+
+                if (actualHints > 0) {
+                    setRevealedLetters(prev => {
+                        if (prev.size >= actualHints) return prev;
+                        // Reveal random unrevealed letter
+                        const unrevealed = word.split('')
+                            .map((c, i) => ({ c, i }))
+                            .filter(({ c, i }) => c !== ' ' && !prev.has(i));
+                        if (unrevealed.length === 0) return prev;
+                        const toReveal = unrevealed[Math.floor(Math.random() * unrevealed.length)];
+                        return new Set([...prev, toReveal.i]);
+                    });
+                }
+            }
         }, 1000);
         return () => clearInterval(interval);
-    }, [room.turn_ends_at, playSound, room.settings?.draw_time]);
+    }, [room.turn_ends_at, playSound, room.settings?.draw_time, room.settings?.hints_enabled, room.current_word]);
+
+    // DRAWER CHECK: If current drawer goes offline OR leaves deeply during active turn
+    useEffect(() => {
+        if (!isHost || !room.turn_ends_at) return;
+
+        // Find the actual drawer based on turn order
+        const currentDrawer = players.find(p => p.turn_order === room.current_drawer_index);
+
+        // Case 1: Drawer completely missing (Left Room / Deleted) -> END IMMEDIATELY
+        if (!currentDrawer) {
+            logger.warn('Drawer missing, ending turn immediately', { context: 'game' });
+            supabase.from('rooms').update({
+                turn_ends_at: new Date().toISOString()
+            }).eq('id', room.id);
+            return;
+        }
+
+        // Case 2: Drawer exists but is offline (Tab Closed / Disconnected) -> GRACE PERIOD
+        if (!currentDrawer.is_connected) {
+            const timeoutId = setTimeout(async () => {
+                logger.warn(`Drawer ${currentDrawer.display_name} timed out (15s), ending turn`, { context: 'game' });
+
+                // Skip turn instead of deleting, so they can rejoin with score preserved
+                await supabase.from('rooms').update({
+                    turn_ends_at: new Date().toISOString()
+                }).eq('id', room.id);
+            }, 15000); // 15 seconds grace period
+
+            return () => clearTimeout(timeoutId);
+        }
+    }, [isHost, room.turn_ends_at, room.id, players, room.current_drawer_index]);
+
+    // HOST MIGRATION: Auto-promote new host if current host leaves
+    useEffect(() => {
+        if (!players || players.length === 0) return;
+
+        // Check if there is an active host
+        const activeHost = players.find(p => p.is_host && p.is_connected);
+
+        if (!activeHost) {
+            // No active host found! We need to elect a new one.
+            const onlinePlayers = players.filter(p => p.is_connected).sort((a, b) => (a.turn_order || 0) - (b.turn_order || 0));
+
+            if (onlinePlayers.length > 0) {
+                const newHostCandidate = onlinePlayers[0];
+                if (newHostCandidate.id === currentPlayerId) {
+                    logger.info(`Host migration: Promoting self (${newHostCandidate.display_name}) to Host`, { context: 'game' });
+                    supabase.from('players').update({ is_host: true }).eq('id', currentPlayerId).then();
+                }
+            }
+        }
+    }, [players, currentPlayerId]);
 
     // Track if drawer points were awarded this turn (to prevent duplicates)
     const drawerPointsAwardedRef = useRef<string | null>(null);
@@ -180,8 +307,8 @@ export default function GameView({ room, players, currentPlayerId }: GameViewPro
             return;
         }
 
-        // 1. Identify guessers (everyone connected except drawer)
-        const connectedPlayers = players.filter(p => p.is_connected);
+        // 1. Identify guessers (everyone connected except drawer AND spectators)
+        const connectedPlayers = players.filter(p => p.is_connected && !p.is_spectator);
         const currentDrawerObj = connectedPlayers.find(p => p.turn_order === room.current_drawer_index);
         const guesserIds = connectedPlayers
             .filter(p => p.id !== currentDrawerObj?.id)
@@ -236,31 +363,49 @@ export default function GameView({ room, players, currentPlayerId }: GameViewPro
         // NOTE: Drawer points are now awarded at turn end (before scorecard shows)
         // See drawerPointsAwardedRef effect above
 
-        // FIX: Blind increment fails if players leave (gaps in turn_order).
-        // Algorithm: Find next available player with turn_order > current.
-        const sortedPlayers = [...players].sort((a, b) => (a.turn_order ?? 0) - (b.turn_order ?? 0));
+        // 1. Filter for ACTIVE connected players (exclude spectators for current round logic)
+        const activePlayers = players.filter(p => !p.is_spectator && p.is_connected);
+        const sortedActive = [...activePlayers].sort((a, b) => (a.turn_order ?? 0) - (b.turn_order ?? 0));
 
-        // Find next player in line
-        let nextPlayer = sortedPlayers.find(p => (p.turn_order ?? 0) > room.current_drawer_index);
+        // Safety check
+        if (sortedActive.length === 0 && players.filter(p => p.is_connected).length === 0) {
+            logger.warn('No active players for next turn', { context: 'game' });
+            return;
+        }
+
+        // 2. Find next active player in current round
+        let nextPlayer = sortedActive.find(p => (p.turn_order ?? 0) > room.current_drawer_index);
         let nextRound = room.current_round;
         let nextStatus = 'playing';
+        let promoteSpectators = false;
 
-        // Wrap around if no higher turn_order found
+        // 3. New Round Logic (Wrap Around)
         if (!nextPlayer) {
-            nextPlayer = sortedPlayers[0];
             nextRound++;
+            promoteSpectators = true; // Flag to promote spectators for the NEXT round
 
-            // Limit checks
+            // Check if game should end
             if (nextRound > room.max_rounds) {
                 nextStatus = 'finished';
+                // No need to calc next player if finished
+                nextPlayer = sortedActive[0]; // fallback
+            } else {
+                // Start of new round: potentially new players join!
+                // We need to look at ALL connected players now, assuming spectators are promoted
+                const allNextRoundPlayers = players.filter(p => p.is_connected); // All connected will be active
+                const sortedAll = [...allNextRoundPlayers].sort((a, b) => (a.turn_order ?? 0) - (b.turn_order ?? 0));
+
+                nextPlayer = sortedAll[0]; // Start from beginning of list
+
+                logger.info('Starting new round, promoting spectators', { context: 'game' });
             }
         }
 
         const nextDrawerIdx = nextPlayer ? (nextPlayer.turn_order ?? 0) : 0;
 
-        // Safety: If no players at all?
-        if (sortedPlayers.length === 0) return;
+        // 4. Perform Updates
 
+        // Update Room State
         await supabase.from('rooms').update({
             current_drawer_index: nextDrawerIdx,
             current_round: nextRound,
@@ -270,7 +415,14 @@ export default function GameView({ room, players, currentPlayerId }: GameViewPro
             updated_at: new Date().toISOString()
         }).eq('id', room.id);
 
-        // Canvas clear is now handled via wordSelectedAt prop change
+        // Promote Spectators if New Round
+        if (promoteSpectators && nextStatus === 'playing') {
+            await supabase.from('players').update({
+                is_spectator: false
+            }).eq('room_id', room.id).eq('is_spectator', true);
+        }
+
+        // Send Clear Event
         await supabase.channel(`room_draw:${room.id}`).send({
             type: 'broadcast',
             event: 'stroke',
@@ -329,6 +481,52 @@ export default function GameView({ room, players, currentPlayerId }: GameViewPro
         return () => clearInterval(timer);
     }, [showWordModal, wordChoices]);
 
+    // HOST WATCHDOG: Handle Drawer Disconnect during Word Selection
+    useEffect(() => {
+        if (!isHost || room.current_word || room.status !== 'playing') {
+            return;
+        }
+
+        // If we are playing but no word is selected, we are in the "Choosing" phase.
+        // If the drawer leaves, the client-side timer in their browser dies.
+        // The Host must enforce a deadline.
+
+        // Wait 15 seconds (10s selection + 5s grace)
+        const timeout = setTimeout(async () => {
+            // Double check state hasn't changed
+            const { data: currentRoom } = await supabase.from('rooms').select('current_word').eq('id', room.id).single();
+            if (currentRoom?.current_word) return;
+
+            // 1. Identify current drawer
+            const currentDrawer = players.find(p => p.turn_order === room.current_drawer_index);
+
+            // 2. Handler: Drawer is OFFLINE -> Skip Turn (Do not delete, allow rejoin)
+            if (currentDrawer && !currentDrawer.is_connected) {
+                logger.warn(`Drawer ${currentDrawer.display_name} is offline during selection. Host skipping turn.`, { context: 'game' });
+                await nextTurn();
+                return;
+            }
+
+            logger.warn('Word selection timed out (Drawer online but timed out). Host forcing selection.', { context: 'game' });
+
+            // Host forces a random word
+            const backupWords = ["APPLE", "HOUSE", "TREE", "CAR", "STAR", "DOG", "CAT", "SUN", "MOON", "FISH"];
+            const randomWord = backupWords[Math.floor(Math.random() * backupWords.length)];
+
+            const effectiveDrawTime = getEffectiveDrawTime(room.settings);
+            const turnEndsAt = new Date(Date.now() + effectiveDrawTime * 1000).toISOString();
+
+            await supabase.from('rooms').update({
+                current_word: randomWord,
+                turn_ends_at: turnEndsAt,
+                word_selected_at: new Date().toISOString()
+            }).eq('id', room.id);
+
+        }, 15000);
+
+        return () => clearTimeout(timeout);
+    }, [isHost, room.current_word, room.status, room.id, room.settings]);
+
     // Check if already guessed this round logic (Persistence)
     useEffect(() => {
         const checkExistingGuess = async () => {
@@ -385,6 +583,8 @@ export default function GameView({ room, players, currentPlayerId }: GameViewPro
 
     const sendGuess = async (e: React.FormEvent) => {
         e.preventDefault();
+        // Spectators cannot guess
+        if (currentPlayer?.is_spectator) return;
         if (!guess.trim() || hasGuessedCorrectly) return;
 
         // Use fuzzy matching
@@ -462,6 +662,20 @@ export default function GameView({ room, players, currentPlayerId }: GameViewPro
     }, [messages]);
 
     const [isChatOpen, setIsChatOpen] = useState(false);
+
+    // Record stats when game finishes
+    useEffect(() => {
+        if (room.status === 'finished' && !hasRecordedStats && currentPlayer) {
+            const winner = [...players].sort((a, b) => b.score - a.score)[0];
+            const isWinner = winner && winner.id === currentPlayer.id;
+
+            recordGame(currentPlayer.score, isWinner);
+            setHasRecordedStats(true);
+            logger.info('Game stats recorded', { context: 'player' });
+        } else if (room.status === 'playing' && hasRecordedStats) {
+            setHasRecordedStats(false);
+        }
+    }, [room.status, hasRecordedStats, currentPlayer, players, recordGame]);
 
     if (room.status === 'finished') {
         // Game Over Screen
@@ -567,6 +781,8 @@ export default function GameView({ room, players, currentPlayerId }: GameViewPro
                 revealedLetters={revealedLetters}
                 gameMode={gameMode}
                 relaySegment={currentRelaySegment}
+                drawerName={safestDrawer?.display_name}
+                isChoosingWord={showWordModal}
             >
                 <GlobalControls
                     onLeaveRoom={async () => {
@@ -584,7 +800,7 @@ export default function GameView({ room, players, currentPlayerId }: GameViewPro
             <div className="flex flex-col md:flex-row gap-0 md:gap-4 flex-1 min-h-0 relative">
 
                 {/* Players List - Mobile: Horizontal Strip, Desktop: Vertical Sidebar */}
-                <div className="w-full shrink-0 h-16 border-b-2 border-black flex flex-row gap-2 overflow-x-auto items-center px-2 bg-white md:border-0 md:w-52 md:flex-col md:h-auto md:overflow-y-auto md:pr-2">
+                <div className="w-full shrink-0 h-16 border-b-2 border-black flex flex-row gap-2 overflow-x-auto items-center px-2 bg-white md:sketchy-border md:border-0 md:w-52 md:flex-col md:h-auto md:overflow-y-auto md:p-2">
                     {players.map(p => {
                         const avatarConfig = (p.avatar?.style && p.avatar?.seed)
                             ? { style: p.avatar.style, seed: p.avatar.seed }
@@ -612,7 +828,20 @@ export default function GameView({ room, players, currentPlayerId }: GameViewPro
                                         <div className="absolute -bottom-1 -right-1 w-3 h-3 bg-green-500 rounded-full border border-white" title="Online" />
                                     )}
                                     {isLeader && (
-                                        <div className="absolute -top-2 -left-1 text-xs md:text-sm animate-bounce">👑</div>
+                                        <div className="absolute -top-2 -left-1 text-xs md:text-sm animate-bounce z-10">👑</div>
+                                    )}
+                                    {p.is_spectator && (
+                                        <div className="absolute top-0 right-0 w-full h-full bg-black/30 rounded-full flex items-center justify-center backdrop-blur-[1px]" title="Spectator Mode">
+                                            <div className="text-white drop-shadow-md text-lg">👀</div>
+                                        </div>
+                                    )}
+                                    {p.is_host && (
+                                        <div
+                                            className="absolute -bottom-2 left-1/2 transform -translate-x-1/2 text-[10px] md:text-xs bg-black text-white border border-white px-1.5 py-0.5 rounded-full shadow-sm font-bold tracking-wider leading-none z-10"
+                                            title="Host"
+                                        >
+                                            HOST
+                                        </div>
                                     )}
                                 </div>
                                 <div className="min-w-0 max-w-[80px] md:max-w-none md:flex-1">
@@ -640,6 +869,7 @@ export default function GameView({ room, players, currentPlayerId }: GameViewPro
                             artistName={safestDrawer?.display_name}
                             correctGuessCount={correctGuessers.size}
                             totalGuessersCount={players.length - 1}
+                            timeLeft={timeLeft}
                         />
                     </div>
 
@@ -678,12 +908,30 @@ export default function GameView({ room, players, currentPlayerId }: GameViewPro
                             }}
                         />
                     )}
+
+                    {/* Idle Warning Overlay */}
+                    {showIdleWarning && (
+                        <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 animate-fade-in">
+                            <div className="bg-white sketchy-border p-6 max-w-sm w-full text-center shadow-2xl mx-4">
+                                <div className="text-5xl mb-3 animate-bounce">⏰</div>
+                                <h2 className="text-2xl font-bold mb-2 font-display text-orange-600">Are you still there?</h2>
+                                <p className="text-gray-600 mb-4">You'll be removed for inactivity in 1 minute</p>
+                                <button
+                                    onClick={resetActivity}
+                                    className="doodle-button w-full text-lg py-3 bg-green-400 hover:bg-green-500 border-2 border-black font-bold shadow-[4px_4px_0px_rgba(0,0,0,1)] active:translate-y-1 active:shadow-none transition-all"
+                                >
+                                    I'm still here! 👋
+                                </button>
+                            </div>
+                        </div>
+                    )}
                 </div>
 
                 {/* Chat - Mobile: Peek Bottom Sheet, Desktop: Sidebar */}
                 <ChatPanel
                     messages={messages}
                     isDrawer={isDrawer}
+                    isSpectator={currentPlayer?.is_spectator}
                     guess={guess}
                     onGuessChange={setGuess}
                     onSubmitGuess={sendGuess}

@@ -19,7 +19,10 @@ export default function JoinScreen({ roomId, onJoin }: JoinScreenProps) {
     const [showNameInput, setShowNameInput] = useState(false);
     const [avatar, setAvatar] = useState<AvatarConfig>(defaultAvatarConfig());
     const hasTriedAutoJoin = useRef(false);
-    const handleAvatarChange = useCallback((config: AvatarConfig) => setAvatar(config), []);
+    const handleAvatarChange = useCallback((config: AvatarConfig) => {
+        setAvatar(config);
+        localStorage.setItem('doodleparty_avatar', JSON.stringify(config));
+    }, []);
 
     // Check for pending data from home page and auto-join
     useEffect(() => {
@@ -41,7 +44,24 @@ export default function JoinScreen({ roomId, onJoin }: JoinScreenProps) {
             setName(pendingName);
             setShowNameInput(true);
         } else {
-            // No pending data = direct link visitor, show full input
+            // No pending data = direct link visitor
+            // 1. Try to load Avatar
+            const savedAvatar = localStorage.getItem('doodleparty_avatar');
+            if (savedAvatar) {
+                try {
+                    const parsed = JSON.parse(savedAvatar);
+                    if (parsed.style && parsed.seed) {
+                        setAvatar(parsed);
+                    }
+                } catch { /* ignore */ }
+            }
+
+            // 2. Try to load Name (from previous sessions)
+            const savedName = localStorage.getItem('doodleparty_name');
+            if (savedName) {
+                setName(savedName);
+            }
+
             setShowNameInput(true);
         }
     }, []);
@@ -77,6 +97,8 @@ export default function JoinScreen({ roomId, onJoin }: JoinScreenProps) {
                 return;
             }
 
+            // Allow joining during game (Spectator Mode)
+            /* 
             if (room.status === 'playing') {
                 logger.warn('Cannot join - game in progress', { context: 'room' });
                 setRoomError('Game already in progress!');
@@ -84,12 +106,22 @@ export default function JoinScreen({ roomId, onJoin }: JoinScreenProps) {
                 setLoading(false);
                 return;
             }
+            */
 
             // Get current players to check limit
             const { count } = await supabase
                 .from('players')
                 .select('*', { count: 'exact', head: true })
                 .eq('room_id', roomId);
+
+            // Check if party has ended (all players left)
+            if (count === 0) {
+                logger.warn('Cannot join - party has ended (all players left)', { context: 'room' });
+                setRoomError('This party has ended! All players have left.');
+                setShowNameInput(true);
+                setLoading(false);
+                return;
+            }
 
             const maxPlayers = room.settings?.max_players || DEFAULT_SETTINGS.max_players;
             if ((count || 0) >= maxPlayers) {
@@ -102,6 +134,9 @@ export default function JoinScreen({ roomId, onJoin }: JoinScreenProps) {
 
             const turnOrder = count || 0;
 
+            // Determine if joining as spectator (game already in progress)
+            const isSpectator = room.status === 'playing';
+
             const { data: player, error } = await supabase
                 .from('players')
                 .insert({
@@ -109,6 +144,7 @@ export default function JoinScreen({ roomId, onJoin }: JoinScreenProps) {
                     display_name: playerName,
                     is_host: false,
                     is_connected: true,
+                    is_spectator: isSpectator, // Spectator if joining mid-game
                     score: 0,
                     turn_order: turnOrder,
                     avatar: playerAvatar

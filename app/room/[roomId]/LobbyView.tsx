@@ -1,3 +1,6 @@
+'use client';
+
+import { useRouter } from 'next/navigation';
 import { Player, Room } from '@/app/_types/game';
 import { COLORS } from '@/app/design_system';
 import { supabase } from '@/lib/supabase';
@@ -90,11 +93,30 @@ export default function LobbyView({ room, players: rawPlayers, currentPlayerId }
         alert('Link copied!');
     };
 
+    const router = useRouter(); // Ensure useRouter is imported
+
+    const handleLeaveRoom = async () => {
+        try {
+            // Delete player from DB
+            await supabase.from('players').delete().eq('id', currentPlayerId);
+            // Clear local storage
+            localStorage.removeItem(`player_id_${room.id}`);
+            // Navigate home
+            router.push('/');
+        } catch (error) {
+            logger.error('Error leaving room', { context: 'player', data: error });
+            router.push('/'); // Navigate anyway
+        }
+    };
+
     return (
         <div className="flex flex-col items-center min-h-screen p-4">
             {/* Global Controls - Music Toggle + Settings */}
             <div className="absolute top-4 right-4 z-20">
-                <GlobalControls />
+                <GlobalControls
+                    onLeaveRoom={handleLeaveRoom}
+                    isHost={isHost}
+                />
             </div>
 
             <div className="max-w-2xl w-full">
@@ -135,8 +157,8 @@ export default function LobbyView({ room, players: rawPlayers, currentPlayerId }
                                         title={p.is_connected ? 'Online' : 'Offline'}
                                     />
                                     {p.is_host && (
-                                        <div className="absolute -top-3 -right-3 text-2xl filter drop-shadow-md animate-bounce-slow" title="Host">
-                                            👑
+                                        <div className="absolute -bottom-2 left-1/2 transform -translate-x-1/2 text-xs bg-black text-white border border-white px-2 py-0.5 rounded-full shadow-md font-bold tracking-wider z-10" title="Host">
+                                            HOST
                                         </div>
                                     )}
                                 </div>

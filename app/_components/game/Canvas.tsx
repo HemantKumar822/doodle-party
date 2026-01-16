@@ -14,10 +14,12 @@ interface CanvasProps {
     // Drawer feedback props
     correctGuessCount?: number;
     totalGuessersCount?: number;
+    // Turn timeout warning
+    timeLeft?: number;
 }
 
 function Canvas(props: CanvasProps) {
-    const { roomId, isDrawer, artistName, width = 800, height = 600, correctGuessCount = 0, totalGuessersCount = 0 } = props;
+    const { roomId, isDrawer, artistName, width = 800, height = 600, correctGuessCount = 0, totalGuessersCount = 0, timeLeft } = props;
     const canvasRef = useRef<HTMLCanvasElement>(null);
     const [tool, setTool] = useState<'pen' | 'eraser' | 'fill'>('pen');
     const [color, setColor] = useState<string>(COLORS.palette.black);
@@ -303,10 +305,13 @@ function Canvas(props: CanvasProps) {
         <div className="relative w-full h-full flex flex-col md:flex-row gap-2">
             {/* Canvas Area - 4:3 Aspect Ratio Container */}
             <div className="relative flex-1 w-full flex items-center justify-center overflow-hidden">
-                <div className="relative w-full max-h-full aspect-square md:aspect-[4/3] sketchy-border bg-white overflow-hidden cursor-crosshair touch-none">
+                <div className={`relative w-full max-h-full aspect-square md:aspect-[4/3] sketchy-border bg-white overflow-hidden cursor-crosshair touch-none transition-all ${timeLeft !== undefined && timeLeft <= 10 && timeLeft > 0
+                    ? 'border-red-500 animate-pulse'
+                    : ''
+                    }`}>
                     {/* Desktop Tools - Inside Canvas (Absolute) */}
                     {isDrawer && (
-                        <div className="hidden md:flex flex-col gap-2 absolute left-2 top-2 bottom-2 bg-white/95 backdrop-blur-md py-3 px-2 rounded-xl border border-black/10 shadow-lg z-20">
+                        <div className="hidden md:flex flex-col justify-between gap-1 absolute left-2 top-2 bottom-2 bg-white/95 backdrop-blur-md py-3 px-2 rounded-xl border border-black/10 shadow-lg z-20">
                             <div className="text-xs font-bold text-center mb-1">Tools</div>
 
                             {/* Tools Group */}
@@ -319,7 +324,7 @@ function Canvas(props: CanvasProps) {
                             <div className="w-full h-px mx-0 my-1 bg-gray-200 shrink-0" />
 
                             {/* Colors */}
-                            <div className="grid grid-cols-2 gap-1 shrink-0 overflow-y-auto flex-1">
+                            <div className="grid grid-cols-2 gap-1 shrink-0">
                                 {Object.values(COLORS.palette).map((c) => (
                                     <button
                                         key={c}

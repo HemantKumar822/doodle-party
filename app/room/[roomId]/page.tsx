@@ -117,6 +117,21 @@ export default function RoomPage() {
         );
     }
 
+    // Show reconnecting state if player exists but is marked offline
+    // Only show this if player joined more than 10 seconds ago (not a fresh join)
+    const playerJoinedAt = currentPlayer ? new Date(currentPlayer.joined_at).getTime() : 0;
+    const isRecentJoin = Date.now() - playerJoinedAt < 10000; // 10 second grace period
+
+    if (currentPlayer && !currentPlayer.is_connected && !isRecentJoin && !justJoinedRef.current) {
+        return (
+            <div className="flex flex-col items-center justify-center min-h-screen">
+                <div className="animate-spin text-4xl mb-4">🔄</div>
+                <div className="text-2xl font-bold font-display">Reconnecting...</div>
+                <p className="text-gray-500 mt-2">Please wait while we restore your session</p>
+            </div>
+        );
+    }
+
     if (room.status === 'waiting') {
         return (
             <ErrorBoundary>

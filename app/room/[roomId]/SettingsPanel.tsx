@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { supabase } from '@/lib/supabase';
 import { Room, RoomSettings, DEFAULT_SETTINGS, GameMode } from '@/app/_types/game';
 
@@ -24,11 +24,21 @@ export default function SettingsPanel({ room, isHost }: SettingsPanelProps) {
     const [settings, setSettings] = useState<RoomSettings>(room.settings || DEFAULT_SETTINGS);
     const [saving, setSaving] = useState(false);
 
+    // Sync local state with real-time room updates
+    useEffect(() => {
+        if (room.settings) {
+            setSettings(room.settings);
+        }
+    }, [room.settings]);
+
     const updateSetting = async <K extends keyof RoomSettings>(key: K, value: RoomSettings[K]) => {
         if (!isHost) return;
 
         const newSettings = { ...settings, [key]: value };
         setSettings(newSettings);
+
+        // Persist to local storage for next time
+        localStorage.setItem('doodleparty_settings', JSON.stringify(newSettings));
 
         setSaving(true);
         await supabase.from('rooms').update({
@@ -74,8 +84,8 @@ export default function SettingsPanel({ room, isHost }: SettingsPanelProps) {
                                     key={t}
                                     onClick={() => updateSetting('draw_time', t)}
                                     className={`px-3 py-1 border-2 rounded-lg font-bold transition-all ${settings.draw_time === t
-                                            ? 'border-black bg-yellow-200 scale-105'
-                                            : 'border-gray-300 hover:border-black'
+                                        ? 'border-black bg-yellow-200 scale-105'
+                                        : 'border-gray-300 hover:border-black'
                                         }`}
                                 >
                                     {t}s
@@ -93,8 +103,8 @@ export default function SettingsPanel({ room, isHost }: SettingsPanelProps) {
                                     key={r}
                                     onClick={() => updateSetting('rounds', r)}
                                     className={`px-3 py-1 border-2 rounded-lg font-bold transition-all ${settings.rounds === r
-                                            ? 'border-black bg-yellow-200 scale-105'
-                                            : 'border-gray-300 hover:border-black'
+                                        ? 'border-black bg-yellow-200 scale-105'
+                                        : 'border-gray-300 hover:border-black'
                                         }`}
                                 >
                                     {r}
@@ -112,8 +122,8 @@ export default function SettingsPanel({ room, isHost }: SettingsPanelProps) {
                                     key={p}
                                     onClick={() => updateSetting('max_players', p)}
                                     className={`px-3 py-1 border-2 rounded-lg font-bold transition-all ${settings.max_players === p
-                                            ? 'border-black bg-yellow-200 scale-105'
-                                            : 'border-gray-300 hover:border-black'
+                                        ? 'border-black bg-yellow-200 scale-105'
+                                        : 'border-gray-300 hover:border-black'
                                         }`}
                                 >
                                     {p}
@@ -131,14 +141,34 @@ export default function SettingsPanel({ room, isHost }: SettingsPanelProps) {
                                     key={w}
                                     onClick={() => updateSetting('word_count', w)}
                                     className={`px-3 py-1 border-2 rounded-lg font-bold transition-all ${settings.word_count === w
-                                            ? 'border-black bg-yellow-200 scale-105'
-                                            : 'border-gray-300 hover:border-black'
+                                        ? 'border-black bg-yellow-200 scale-105'
+                                        : 'border-gray-300 hover:border-black'
                                         }`}
                                 >
                                     {w}
                                 </button>
                             ))}
                         </div>
+                    </div>
+
+                    {/* Hints Toggle */}
+                    <div>
+                        <label className="block text-sm font-bold mb-2">💡 Word Hints</label>
+                        <button
+                            onClick={() => updateSetting('hints_enabled', !settings.hints_enabled)}
+                            className={`w-full p-3 border-2 rounded-lg flex items-center justify-between transition-all ${settings.hints_enabled
+                                ? 'border-green-500 bg-green-100'
+                                : 'border-gray-300 hover:border-black'
+                                }`}
+                        >
+                            <div>
+                                <div className="font-bold text-left">{settings.hints_enabled ? '✅ Enabled' : '❌ Disabled'}</div>
+                                <div className="text-xs text-gray-600 text-left">Reveal 1 letter every 20 seconds</div>
+                            </div>
+                            <div className={`w-12 h-6 rounded-full transition-all ${settings.hints_enabled ? 'bg-green-500' : 'bg-gray-300'}`}>
+                                <div className={`w-5 h-5 bg-white rounded-full shadow-md transform transition-transform ${settings.hints_enabled ? 'translate-x-6' : 'translate-x-0.5'} mt-0.5`} />
+                            </div>
+                        </button>
                     </div>
 
                     {/* Game Mode */}
@@ -150,8 +180,8 @@ export default function SettingsPanel({ room, isHost }: SettingsPanelProps) {
                                     key={mode.value}
                                     onClick={() => updateSetting('game_mode', mode.value)}
                                     className={`p-3 border-2 rounded-lg text-left transition-all ${settings.game_mode === mode.value
-                                            ? 'border-black bg-yellow-200'
-                                            : 'border-gray-300 hover:border-black'
+                                        ? 'border-black bg-yellow-200'
+                                        : 'border-gray-300 hover:border-black'
                                         }`}
                                 >
                                     <div className="font-bold">{mode.label}</div>
