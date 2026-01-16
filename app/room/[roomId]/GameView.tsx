@@ -863,6 +863,7 @@ export default function GameView({ room, players, currentPlayerId }: GameViewPro
                         <Canvas
                             roomId={room.id}
                             isDrawer={isDrawer}
+                            currentPlayerId={currentPlayerId}
                             width={800}
                             height={800}
                             wordSelectedAt={room.word_selected_at}

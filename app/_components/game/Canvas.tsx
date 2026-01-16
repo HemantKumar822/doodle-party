@@ -7,6 +7,7 @@ import { StrokePoint } from '@/app/_types/game';
 interface CanvasProps {
     roomId: string;
     isDrawer: boolean;
+    currentPlayerId?: string; // For per-player tool memory
     artistName?: string; // New prop for badge
     width?: number;
     height?: number;
@@ -19,13 +20,38 @@ interface CanvasProps {
 }
 
 function Canvas(props: CanvasProps) {
-    const { roomId, isDrawer, artistName, width = 800, height = 600, correctGuessCount = 0, totalGuessersCount = 0, timeLeft } = props;
+    const { roomId, isDrawer, currentPlayerId, artistName, width = 800, height = 600, correctGuessCount = 0, totalGuessersCount = 0, timeLeft } = props;
     const canvasRef = useRef<HTMLCanvasElement>(null);
     const [tool, setTool] = useState<'pen' | 'eraser' | 'fill'>('pen');
     const [color, setColor] = useState<string>(COLORS.palette.black);
     const [thickness, setThickness] = useState<number>(5);
     const [isDrawing, setIsDrawing] = useState(false);
     const strokeBuffer = useRef<StrokePoint[]>([]);
+
+    // PER-PLAYER TOOL MEMORY (Session-scoped, Room-scoped)
+    // Stores each player's last-used tool preferences for this session
+    type ToolPrefs = { tool: 'pen' | 'eraser' | 'fill'; color: string; thickness: number };
+    const playerPrefsRef = useRef<Record<string, ToolPrefs>>({});
+
+    // Restore prefs when this player becomes the drawer
+    useEffect(() => {
+        if (isDrawer && currentPlayerId) {
+            const savedPrefs = playerPrefsRef.current[currentPlayerId];
+            if (savedPrefs) {
+                setTool(savedPrefs.tool);
+                setColor(savedPrefs.color);
+                setThickness(savedPrefs.thickness);
+            }
+            // If no saved prefs, defaults are already set (pen, black, 5)
+        }
+    }, [isDrawer, currentPlayerId]);
+
+    // Save prefs whenever tool settings change (only for drawer)
+    useEffect(() => {
+        if (isDrawer && currentPlayerId) {
+            playerPrefsRef.current[currentPlayerId] = { tool, color, thickness };
+        }
+    }, [isDrawer, currentPlayerId, tool, color, thickness]);
 
     // Mobile toolbar state
     const [showColorPicker, setShowColorPicker] = useState(false);
