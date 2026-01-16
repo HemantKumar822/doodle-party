@@ -3,6 +3,7 @@ import { supabase } from '@/lib/supabase';
 import { COLORS } from '@/app/design_system';
 import { getCanvasPoint, drawStroke, floodFill } from '@/app/_lib/gameLogic';
 import { StrokePoint } from '@/app/_types/game';
+import { RealtimeChannel } from '@supabase/supabase-js';
 
 interface CanvasProps {
     roomId: string;
@@ -67,7 +68,19 @@ function Canvas(props: CanvasProps) {
     // Throttling ref
     const lastBroadcast = useRef<number>(0);
     const BROADCAST_INTERVAL = 16; // 60fps target
+
+    // FIX: Track initialization to prevent canvas clearing on re-renders
+    const isInitializedRef = useRef(false);
+    // FIX: Store channel ref to avoid REST fallback and ensure consistent send
+    const channelRef = useRef<RealtimeChannel | null>(null);
+    // FIX: Track isDrawer in ref to avoid stale closure in realtime callback
+    const isDrawerRef = useRef(isDrawer);
     const canvasRect = useRef<DOMRect | null>(null); // Cache for performance
+
+    // Keep isDrawerRef in sync with prop
+    useEffect(() => {
+        isDrawerRef.current = isDrawer;
+    }, [isDrawer]);
 
     // Save current canvas state to history
     const saveToHistory = useCallback(() => {
@@ -97,52 +110,66 @@ function Canvas(props: CanvasProps) {
     useEffect(() => {
         if (!canvasRef.current) return;
         const canvas = canvasRef.current;
-
-        // Initialize white background (important for flood fill)
         const ctx = canvas.getContext('2d');
-        if (ctx) {
+
+        // FIX: Only initialize canvas on first mount, not on every re-render
+        if (!isInitializedRef.current && ctx) {
             ctx.fillStyle = COLORS.paper;
             ctx.fillRect(0, 0, canvas.width, canvas.height);
             // Save initial blank state for Undo
             if (historyRef.current.length === 0) {
                 saveToHistory();
             }
+            isInitializedRef.current = true;
         }
 
-        // Setup Realtime Subscription
-        const channel = supabase.channel(`room_draw:${roomId}`)
-            .on('broadcast', { event: 'stroke' }, ({ payload }) => {
-                // Don't draw own strokes from server to avoid lag/double-draw
-                if (!isDrawer) {
-                    const ctx = canvas.getContext('2d');
-                    if (!ctx) return;
+        // FIX: Only setup channel once and store in ref
+        if (!channelRef.current) {
+            const channel = supabase.channel(`room_draw:${roomId}`)
+                .on('broadcast', { event: 'stroke' }, ({ payload }) => {
+                    // Don't draw own strokes from server - use ref to avoid stale closure
+                    if (!isDrawerRef.current) {
+                        const ctx = canvas.getContext('2d');
+                        if (!ctx) return;
 
-                    if (payload.tool === 'fill') {
-                        floodFill(ctx, payload.x, payload.y, payload.color);
-                    } else if (payload.tool === 'clear') {
-                        ctx.clearRect(0, 0, canvas.width, canvas.height);
-                        ctx.fillStyle = COLORS.paper;
-                        ctx.fillRect(0, 0, canvas.width, canvas.height);
-                        // Clear history for viewers too if needed, but usually handled by turn logic
-                    } else {
-                        // Reconstruct stroke
-                        drawStroke(
-                            ctx,
-                            payload.points,
-                            payload.tool === 'eraser' ? COLORS.paper : payload.color,
-                            payload.thickness,
-                            canvas.width,
-                            canvas.height
-                        );
+                        if (payload.tool === 'fill') {
+                            floodFill(ctx, payload.x, payload.y, payload.color);
+                        } else if (payload.tool === 'clear') {
+                            ctx.clearRect(0, 0, canvas.width, canvas.height);
+                            ctx.fillStyle = COLORS.paper;
+                            ctx.fillRect(0, 0, canvas.width, canvas.height);
+                        } else if (payload.tool === 'snapshot') {
+                            // Handle undo/redo - load compressed canvas snapshot
+                            const img = new Image();
+                            img.onload = () => {
+                                ctx.clearRect(0, 0, canvas.width, canvas.height);
+                                ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+                            };
+                            img.src = payload.dataUrl;
+                        } else if (payload.points && payload.points.length > 0) {
+                            drawStroke(
+                                ctx,
+                                payload.points,
+                                payload.tool === 'eraser' ? COLORS.paper : payload.color,
+                                payload.thickness,
+                                canvas.width,
+                                canvas.height
+                            );
+                        }
                     }
-                }
-            })
-            .subscribe();
+                })
+                .subscribe();
+
+            channelRef.current = channel;
+        }
 
         return () => {
-            supabase.removeChannel(channel);
+            if (channelRef.current) {
+                supabase.removeChannel(channelRef.current);
+                channelRef.current = null;
+            }
         };
-    }, [roomId, isDrawer, saveToHistory]);
+    }, [roomId]); // FIX: Removed isDrawer and saveToHistory from deps - they cause unnecessary re-runs
 
     // FIX #5: Clear canvas AND history when turn changes (detected by word_selected_at change)
     const lastWordSelectedAt = useRef<string | null>(null);
@@ -183,13 +210,16 @@ function Canvas(props: CanvasProps) {
 
         if (tool === 'fill') {
             floodFill(ctx, point.x, point.y, color);
-            // Broadcast fill immediately
-            supabase.channel(`room_draw:${roomId}`).send({
-                type: 'broadcast',
-                event: 'stroke',
-                payload: { tool: 'fill', color, x: point.x, y: point.y }
-            });
+            // Broadcast fill immediately - use channel ref to avoid REST fallback
+            if (channelRef.current) {
+                channelRef.current.send({
+                    type: 'broadcast',
+                    event: 'stroke',
+                    payload: { tool: 'fill', color, x: point.x, y: point.y }
+                });
+            }
             setIsDrawing(false); // Fill is a one-off action
+            saveToHistory(); // Save after fill so each fill is a separate undo step
         } else {
             ctx.beginPath();
             ctx.moveTo(point.x * width, point.y * height);
@@ -225,11 +255,11 @@ function Canvas(props: CanvasProps) {
             }
         }
 
-        // Broadcast Throttling
+        // Broadcast Throttling - use channel ref to avoid REST fallback
         const now = Date.now();
-        if (now - lastBroadcast.current > BROADCAST_INTERVAL) {
+        if (now - lastBroadcast.current > BROADCAST_INTERVAL && channelRef.current) {
             if (strokeBuffer.current.length > 0) {
-                supabase.channel(`room_draw:${roomId}`).send({
+                channelRef.current.send({
                     type: 'broadcast',
                     event: 'stroke',
                     payload: {
@@ -249,9 +279,9 @@ function Canvas(props: CanvasProps) {
         if (!isDrawer || !isDrawing) return;
         setIsDrawing(false);
 
-        // Send remaining points
-        if (strokeBuffer.current.length > 0) {
-            supabase.channel(`room_draw:${roomId}`).send({
+        // Send remaining points - use channel ref to avoid REST fallback
+        if (strokeBuffer.current.length > 0 && channelRef.current) {
+            channelRef.current.send({
                 type: 'broadcast',
                 event: 'stroke',
                 payload: {
@@ -279,16 +309,19 @@ function Canvas(props: CanvasProps) {
         const imageData = historyRef.current[historyIndexRef.current];
         ctx.putImageData(imageData, 0, 0);
 
-        // Broadcast the undo
-        supabase.channel(`room_draw:${roomId}`).send({
-            type: 'broadcast',
-            event: 'stroke',
-            payload: { tool: 'undo', imageData: Array.from(imageData.data) }
-        });
+        // Broadcast compressed snapshot to viewers (~50-200KB vs 2.5MB raw)
+        if (channelRef.current && canvasRef.current) {
+            const dataUrl = canvasRef.current.toDataURL('image/png', 0.8);
+            channelRef.current.send({
+                type: 'broadcast',
+                event: 'stroke',
+                payload: { tool: 'snapshot', dataUrl }
+            });
+        }
 
         setCanUndo(historyIndexRef.current > 0);
         setCanRedo(true);
-    }, [roomId]);
+    }, []);
 
     const redo = useCallback(() => {
         if (!canvasRef.current || historyIndexRef.current >= historyRef.current.length - 1) return;
@@ -299,16 +332,19 @@ function Canvas(props: CanvasProps) {
         const imageData = historyRef.current[historyIndexRef.current];
         ctx.putImageData(imageData, 0, 0);
 
-        // Broadcast the redo
-        supabase.channel(`room_draw:${roomId}`).send({
-            type: 'broadcast',
-            event: 'stroke',
-            payload: { tool: 'redo', imageData: Array.from(imageData.data) }
-        });
+        // Broadcast compressed snapshot to viewers (~50-200KB vs 2.5MB raw)
+        if (channelRef.current && canvasRef.current) {
+            const dataUrl = canvasRef.current.toDataURL('image/png', 0.8);
+            channelRef.current.send({
+                type: 'broadcast',
+                event: 'stroke',
+                payload: { tool: 'snapshot', dataUrl }
+            });
+        }
 
         setCanUndo(true);
         setCanRedo(historyIndexRef.current < historyRef.current.length - 1);
-    }, [roomId]);
+    }, []);
 
     const clearCanvas = () => {
         if (!canvasRef.current) return;
@@ -319,11 +355,14 @@ function Canvas(props: CanvasProps) {
             ctx.fillStyle = COLORS.paper;
             ctx.fillRect(0, 0, width, height);
 
-            supabase.channel(`room_draw:${roomId}`).send({
-                type: 'broadcast',
-                event: 'stroke',
-                payload: { tool: 'clear' }
-            });
+            // Use channel ref for clear broadcast
+            if (channelRef.current) {
+                channelRef.current.send({
+                    type: 'broadcast',
+                    event: 'stroke',
+                    payload: { tool: 'clear' }
+                });
+            }
         }
     };
 
